@@ -1,29 +1,25 @@
 import { useState, useEffect } from 'react'
-import { api, ClinicConfig } from '../lib/api'
+import { motion, AnimatePresence } from 'framer-motion'
+import { api, FirmConfig, Service } from '../lib/api'
+import { Page, PageHeader, Reveal, Section, Skeleton } from '../components/Page'
+import { springy } from '../lib/motion'
+import { IconCheck, IconScale } from '../components/Icon'
 
-const EMPTY_CONFIG: ClinicConfig = {
-  name: '',
-  segment: '',
-  address: '',
-  phone: '',
-  hours: '',
-  timezone: '',
-  agent_name: '',
+const EMPTY_CONFIG: FirmConfig = {
+  name: '', segment: '', address: '', phone: '', hours: '', timezone: '', agent_name: '',
 }
 
 export function Configuracoes() {
-  const [form, setForm] = useState<ClinicConfig>(EMPTY_CONFIG)
+  const [form, setForm] = useState<FirmConfig>(EMPTY_CONFIG)
+  const [areas, setAreas] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => setForm(cfg))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    api.getConfig().then(setForm).catch(() => {}).finally(() => setLoading(false))
+    api.getServices().then(setAreas).catch(() => {})
   }, [])
 
   async function handleSave(e: React.FormEvent) {
@@ -42,7 +38,7 @@ export function Configuracoes() {
     }
   }
 
-  function field(key: keyof ClinicConfig) {
+  function field(key: keyof FirmConfig) {
     return {
       value: form[key],
       onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -52,89 +48,116 @@ export function Configuracoes() {
 
   if (loading) {
     return (
-      <div className="space-y-5 animate-fade-in pb-8 max-w-2xl">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
-        </div>
+      <Page className="max-w-3xl">
+        <PageHeader title="Configurações" subtitle="Dados do escritório e do atendimento automático" />
         <div className="card space-y-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="skeleton h-10 w-full" />
-          ))}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
         </div>
-      </div>
+      </Page>
     )
   }
 
+  const atuacao = areas.filter((a) => a.active && a.category === 'Áreas de atuação')
+
   return (
-    <div className="space-y-5 animate-fade-in pb-8 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Configurações da clínica e do agente</p>
-      </div>
+    <Page className="max-w-3xl">
+      <PageHeader title="Configurações" subtitle="Dados do escritório e do atendimento automático" />
 
-      <form onSubmit={handleSave} className="space-y-5">
-        <div className="card space-y-5">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Clínica</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Nome</label>
-                <input className="input" {...field('name')} />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Segmento</label>
-                <input className="input" {...field('segment')} />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Endereço</label>
-                <input className="input" {...field('address')} />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Telefone</label>
-                <input className="input" placeholder="+55 11 99999-9999" {...field('phone')} />
-              </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <Section title="Escritório" subtitle="aparece no CRM e no contexto do agente">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Nome</label>
+              <input className="input" {...field('name')} />
+            </div>
+            <div>
+              <label className="label">Segmento</label>
+              <input className="input" placeholder="Ex.: Escritório full service" {...field('segment')} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Endereço</label>
+              <input className="input" {...field('address')} />
+            </div>
+            <div>
+              <label className="label">Telefone</label>
+              <input className="input" placeholder="+55 11 99999-9999" {...field('phone')} />
             </div>
           </div>
+        </Section>
 
-          <div className="border-t border-gray-100 pt-5">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">
-              Agente {form.agent_name && `"${form.agent_name}"`}
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Nome do agente</label>
-                <input className="input" placeholder="Ex: Lara" {...field('agent_name')} />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Horário de atendimento</label>
-                <input
-                  className="input"
-                  placeholder="Ex: segunda a sábado, das 9h às 19h"
-                  {...field('hours')}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Fuso horário</label>
-                <input
-                  className="input"
-                  placeholder="Ex: America/Sao_Paulo"
-                  {...field('timezone')}
-                />
-              </div>
+        <Section
+          title={`Atendimento automático${form.agent_name ? ` — ${form.agent_name}` : ''}`}
+          subtitle="quem recebe o primeiro contato no WhatsApp"
+        >
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Nome do agente</label>
+              <input className="input" placeholder="Ex.: Helena" {...field('agent_name')} />
+            </div>
+            <div>
+              <label className="label">Horário de atendimento</label>
+              <input className="input" placeholder="segunda a sexta, das 9h às 18h" {...field('hours')} />
+            </div>
+            <div>
+              <label className="label">Fuso horário</label>
+              <input className="input" placeholder="America/Sao_Paulo" {...field('timezone')} />
             </div>
           </div>
+        </Section>
 
-          <div className="flex items-center justify-between border-t border-gray-100 pt-4">
-            <div className="text-sm">
-              {error && <span className="text-red-500">{error}</span>}
-              {saved && <span className="text-emerald-600 font-medium">✓ Salvo com sucesso</span>}
-            </div>
-            <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Salvando…' : 'Salvar alterações'}
-            </button>
+        <Reveal className="card sticky bottom-4 flex items-center justify-between gap-4 shadow-lift">
+          <div className="text-sm min-h-[20px]">
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.span
+                  key="err"
+                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="text-red-600"
+                >
+                  {error}
+                </motion.span>
+              )}
+              {saved && (
+                <motion.span
+                  key="ok"
+                  initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                  transition={springy}
+                  className="text-emerald-700 font-medium inline-flex items-center gap-1.5"
+                >
+                  <IconCheck className="w-4 h-4" /> Salvo
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
-        </div>
+          <button type="submit" disabled={saving} className="btn-primary">
+            {saving ? 'Salvando…' : 'Salvar alterações'}
+          </button>
+        </Reveal>
       </form>
-    </div>
+
+      {/* Só leitura: as áreas vêm do tenant YAML, quem edita é quem cuida da config. */}
+      {atuacao.length > 0 && (
+        <Section title="Áreas de atuação" subtitle="o que o agente oferece na triagem" className="mt-4">
+          <div className="flex flex-wrap gap-2">
+            {atuacao.map((a, i) => (
+              <motion.span
+                key={a.id}
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.04 * i, duration: 0.24 }}
+                className="badge bg-primary/8 text-primary"
+              >
+                <IconScale className="w-3 h-3" />
+                {a.name}
+              </motion.span>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-3 pt-3 border-t border-line">
+            Editadas em <code className="text-slate-500">tenants/juris.yaml</code>. Honorários nunca entram
+            no CRM nem no contexto do agente — só são tratados na consulta com o advogado.
+          </p>
+        </Section>
+      )}
+    </Page>
   )
 }

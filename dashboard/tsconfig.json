@@ -21,5 +21,8 @@
     }
   },
   "include": ["src"],
+  // Testes rodam no Node (`npm test`), não no bundle do browser — o tsc do build
+  // não tem os tipos de node:test e não precisa deles.
+  "exclude": ["src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

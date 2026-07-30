@@ -1,357 +1,298 @@
 import { useMemo } from 'react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  FunnelChart, Funnel, LabelList,
-  PieChart, Pie,
-} from 'recharts'
-import { parseISO, getHours, format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
-import { api } from '../lib/api'
+import { motion } from 'framer-motion'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { parseISO, getHours, differenceInHours } from 'date-fns'
+import { api, MOTIVO_PERDA_LABELS, MotivoPerda } from '../lib/api'
 import { useFetch } from '../hooks/useFetch'
 import { RefreshBar } from '../components/RefreshBar'
+import { StatCard } from '../components/StatCard'
+import { Page, PageHeader, Section, EmptyState, SkeletonCards } from '../components/Page'
+import { ChartTooltip, MeterRow, axisProps } from '../components/Chart'
+import { SERIES, FUNNEL_RAMP, STATUS, shortArea } from '../lib/theme'
+import { stagger } from '../lib/motion'
+import { IconUsers, IconTrendUp, IconClock, IconScale, IconBarChart2, IconGavel } from '../components/Icon'
 
-const PRIMARY   = '#7C3D6E'
-const GOLD      = '#C5A87D'
-const COLORS    = [PRIMARY, GOLD, '#9B5089', '#D4BB99', '#5E2D53', '#2D6E7C']
-
-const ESC_CATEGORY: Record<string, { label: string; color: string; bg: string }> = {
-  medica:            { label: 'Médica',          color: '#DC2626', bg: '#FEE2E2' },
-  reclamacao:        { label: 'Reclamação',       color: '#EA580C', bg: '#FFEDD5' },
-  pedido_humano:     { label: 'Pedido de humano', color: '#2563EB', bg: '#DBEAFE' },
-  confusao_repetida: { label: 'Confusão repetida',color: '#D97706', bg: '#FEF3C7' },
-  fora_escopo:       { label: 'Fora do escopo',   color: '#6B7280', bg: '#F3F4F6' },
+const ESC_LABEL: Record<string, string> = {
+  urgencia_prazo:        'Menção a prazo',
+  processo_em_andamento: 'Processo em andamento',
+  consulta_juridica:     'Pediu orientação',
+  reclamacao:            'Reclamação',
+  pedido_humano:         'Pediu humano',
+  confusao_repetida:     'Conversa travada',
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null
+const HOURS = Array.from({ length: 10 }, (_, i) => 9 + i)
+
+/** Barra horizontal simples reutilizada nos rankings — evita 4 BarCharts iguais. */
+function Ranking({
+  rows, total, colorFor, empty,
+}: {
+  rows: { name: string; value: number }[]
+  total: number
+  colorFor: (name: string, i: number) => string
+  empty: string
+}) {
+  if (rows.length === 0) return <EmptyState title={empty} />
   return (
-    <div className="bg-white border border-gray-100 shadow-lg rounded-xl px-3 py-2 text-xs">
-      <p className="font-semibold text-gray-600 mb-1">{label}</p>
-      {payload.map((p: any) => (
-        <p key={p.dataKey} style={{ color: p.color ?? PRIMARY }} className="font-medium">
-          {p.name}: {p.value}
-        </p>
+    <div className="space-y-3">
+      {rows.map((r, i) => (
+        <MeterRow
+          key={r.name}
+          label={r.name}
+          value={r.value}
+          total={total}
+          color={colorFor(r.name, i)}
+          delay={0.08 + i * 0.05}
+        />
       ))}
     </div>
   )
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  pending:              'Pendente',
-  confirmed:            'Confirmado',
-  rejected:             'Rejeitado',
-  cancelled:            'Cancelado',
-  reschedule_requested: 'Remarcação',
-  cancel_requested:     'Cancelamento',
-}
-
-const HOUR_LABELS = ['9h','10h','11h','12h','13h','14h','15h','16h','17h','18h']
-
 export function Metrics() {
-  const { data: stats, refetch: refetchStats, lastUpdated, loading }
-    = useFetch(() => api.getStats())
-  const { data: leads, refetch: refetchLeads }
-    = useFetch(() => api.getLeads({ limit: 500 }))
-  const { data: appointments, refetch: refetchApts }
-    = useFetch(() => api.getAppointments())
-  const { data: escalations, refetch: refetchEsc }
-    = useFetch(() => api.getEscalations(50))
+  const { data: stats, refetch: refetchStats, lastUpdated, loading } = useFetch(() => api.getStats())
+  const { data: leads, refetch: refetchLeads } = useFetch(() => api.getLeads({ limit: 500 }))
+  const { data: appointments, refetch: refetchApts } = useFetch(() => api.getAppointments())
+  const { data: escalations, refetch: refetchEsc } = useFetch(() => api.getEscalations(100))
 
   function refetch() { refetchStats(); refetchLeads(); refetchApts(); refetchEsc() }
 
-  /* Funil com drop-off */
-  const funnelData = useMemo(() => {
-    if (!stats) return []
-    const steps = [
-      { name: 'Contatos',     value: stats.leads_total,            fill: PRIMARY },
-      { name: 'Qualificados', value: stats.leads_qualified,        fill: '#9B5089' },
-      { name: 'Agendamentos', value: stats.appointments_total,     fill: GOLD },
-      { name: 'Confirmados',  value: stats.appointments_confirmed, fill: '#D4BB99' },
-    ]
-    const base = steps[0].value || 1
-    return steps.map((s, i) => ({
-      ...s,
-      label: `${s.name} ${i > 0 ? `(${Math.round(s.value / base * 100)}%)` : ''}`.trim(),
-    }))
-  }, [stats])
+  const total     = stats?.leads_total ?? 0
+  const qualified = stats?.leads_qualified ?? 0
+  const booked    = stats?.appointments_total ?? 0
+  const confirmed = stats?.appointments_confirmed ?? 0
+  const clients   = (leads ?? []).filter((l) => l.status === 'cliente').length
+  const lost      = (leads ?? []).filter((l) => l.status === 'perdido').length
 
-  /* Drop-off entre etapas */
-  const dropoffs = useMemo(() => {
-    if (!stats) return []
-    const steps = [
-      stats.leads_total,
-      stats.leads_qualified,
-      stats.appointments_total,
-      stats.appointments_confirmed,
-    ]
-    return steps.slice(1).map((v, i) => ({
-      from: ['Contatos', 'Qualificados', 'Agendados'][i],
-      to:   ['Qualificados', 'Agendados', 'Confirmados'][i],
-      pct:  steps[i] > 0 ? Math.round(v / steps[i] * 100) : 0,
-    }))
-  }, [stats])
+  const funnel = [
+    { label: 'Chegaram no WhatsApp', value: total },
+    { label: 'Triagem completa',     value: qualified },
+    { label: 'Agendaram consulta',   value: booked },
+    { label: 'Consulta confirmada',  value: confirmed },
+    { label: 'Viraram cliente',      value: clients },
+  ]
 
-  /* Áreas jurídicas */
-  const procedureData = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const l of leads ?? []) {
-      if (l.area_juridica)
-        counts[l.area_juridica] = (counts[l.area_juridica] ?? 0) + 1
+  /* Onde o funil sangra: queda percentual de uma etapa para a próxima. */
+  const dropoffs = funnel.slice(1).map((step, i) => {
+    const prev = funnel[i].value
+    return {
+      from: funnel[i].label,
+      to: step.label,
+      keptPct: prev > 0 ? Math.round((step.value / prev) * 100) : 0,
+      lost: Math.max(prev - step.value, 0),
     }
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name, value]) => ({ name, value }))
+  })
+
+  /**
+   * Tempo do primeiro "oi" até a consulta marcada. É o número que o escritório
+   * usa para saber se a triagem automática está segurando gente na fila.
+   */
+  const avgHoursToBook = useMemo(() => {
+    const byPhone = Object.fromEntries((leads ?? []).map((l) => [l.phone, l.created_at]))
+    const spans: number[] = []
+    for (const a of appointments ?? []) {
+      const first = byPhone[a.phone]
+      if (!first || !a.created_at) continue
+      try {
+        const h = differenceInHours(parseISO(a.created_at), parseISO(first))
+        if (h >= 0 && h < 24 * 90) spans.push(h)
+      } catch { /* data inválida: ignora */ }
+    }
+    if (spans.length === 0) return null
+    return Math.round(spans.reduce((s, v) => s + v, 0) / spans.length)
+  }, [leads, appointments])
+
+  const areaRows = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const l of leads ?? []) if (l.area_juridica) counts[l.area_juridica] = (counts[l.area_juridica] ?? 0) + 1
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([name, value]) => ({ name: shortArea(name), value }))
   }, [leads])
 
-  /* Status dos agendamentos */
-  const statusData = useMemo(() => {
+  const sourceRows = useMemo(() => {
     const counts: Record<string, number> = {}
-    for (const a of appointments ?? []) counts[a.status] = (counts[a.status] ?? 0) + 1
-    return Object.entries(counts).map(([status, value]) => ({
-      name: STATUS_LABEL[status] ?? status, value,
-    }))
-  }, [appointments])
-
-  /* Horários de pico (por hora) */
-  const peakHourData = useMemo(() => {
-    const counts: Record<number, number> = {}
-    for (const l of leads ?? []) {
-      if (!l.created_at) continue
-      try { const h = getHours(parseISO(l.created_at)); counts[h] = (counts[h] ?? 0) + 1 } catch { /* */ }
-    }
-    return HOUR_LABELS.map((label, i) => ({ label, contatos: counts[9 + i] ?? 0 }))
-  }, [leads])
-
-  /* Indicação / fonte */
-  const sourceData = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const l of leads ?? []) {
-      if (l.origem) counts[l.origem] = (counts[l.origem] ?? 0) + 1
-    }
+    for (const l of leads ?? []) if (l.origem) counts[l.origem] = (counts[l.origem] ?? 0) + 1
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }))
   }, [leads])
 
-  /* Taxas */
-  const convRate = stats && stats.leads_total > 0
-    ? Math.round((stats.appointments_total / stats.leads_total) * 100) : 0
-  const qualRate = stats && stats.leads_total > 0
-    ? Math.round((stats.leads_qualified / stats.leads_total) * 100) : 0
-  const escRate = stats && stats.leads_total > 0
-    ? Math.round((stats.escalations_total / stats.leads_total) * 100) : 0
+  /** Por que perdemos — a métrica que o escritório age em cima. */
+  const lossRows = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const l of leads ?? []) {
+      if (l.status !== 'perdido' || !l.motivo_perda) continue
+      counts[l.motivo_perda] = (counts[l.motivo_perda] ?? 0) + 1
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+      .map(([k, value]) => ({ name: MOTIVO_PERDA_LABELS[k as MotivoPerda] ?? k, value }))
+  }, [leads])
 
-  const isEmpty = !stats || stats.leads_total === 0
+  const escRows = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const e of escalations ?? []) counts[e.category] = (counts[e.category] ?? 0) + 1
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])
+      .map(([k, value]) => ({ name: ESC_LABEL[k] ?? k, value }))
+  }, [escalations])
+
+  /* Quando as pessoas escrevem — ajuda a dimensionar o plantão humano. */
+  const hourRows = useMemo(() => {
+    const counts: Record<number, number> = {}
+    for (const l of leads ?? []) {
+      if (!l.created_at) continue
+      try { const h = getHours(parseISO(l.created_at)); counts[h] = (counts[h] ?? 0) + 1 } catch { /* ignora */ }
+    }
+    return HOURS.map((h) => ({ label: `${h}h`, contatos: counts[h] ?? 0 }))
+  }, [leads])
+
+  const convRate   = total > 0 ? Math.round((booked / total) * 100) : 0
+  const clientRate = total > 0 ? Math.round((clients / total) * 100) : 0
+  const qualRate   = total > 0 ? Math.round((qualified / total) * 100) : 0
 
   return (
-    <div className="space-y-6 animate-fade-in pb-8">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Métricas</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Performance do agente Lara</p>
-        </div>
-        <RefreshBar refetch={refetch} lastUpdated={lastUpdated} loading={loading} />
-      </div>
+    <Page>
+      <PageHeader
+        title="Relatórios"
+        subtitle="Conversão do primeiro contato até o cliente — sobre a base inteira"
+        actions={<RefreshBar refetch={refetch} lastUpdated={lastUpdated} loading={loading} />}
+      />
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Taxa de qualificação', value: `${qualRate}%`, sub: 'contatos → qualificados', color: PRIMARY },
-          { label: 'Taxa de conversão',    value: `${convRate}%`, sub: 'contatos → agendamentos', color: GOLD },
-          { label: 'Agendamentos',         value: stats?.appointments_total ?? 0,   sub: 'total gerados', color: PRIMARY },
-          { label: 'Escalações',           value: `${escRate}%`, sub: `${stats?.escalations_total ?? 0} total`, color: '#D97706' },
-        ].map(k => (
-          <div key={k.label} className="card flex flex-col gap-1.5">
-            <p className="text-xs text-gray-400 font-medium">{k.label}</p>
-            <p className="text-3xl font-bold" style={{ color: k.color }}>{k.value}</p>
-            <p className="text-xs text-gray-400">{k.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Funil + áreas */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Funil de conversão</h2>
-          <p className="text-xs text-gray-400 mb-4">Contatos → Qualificados → Agendados → Confirmados</p>
-          {isEmpty ? (
-            <div className="h-52 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={200}>
-                <FunnelChart>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Funnel dataKey="value" data={funnelData} isAnimationActive animationBegin={200} animationDuration={800}>
-                    <LabelList position="right" fill="#374151" stroke="none" dataKey="label" style={{ fontSize: 11 }} />
-                    <LabelList position="center" fill="#fff" stroke="none" dataKey="value" style={{ fontSize: 12, fontWeight: 600 }} />
-                  </Funnel>
-                </FunnelChart>
-              </ResponsiveContainer>
-              {dropoffs.length > 0 && (
-                <div className="flex justify-around mt-3 pt-3 border-t border-gray-50">
-                  {dropoffs.map(d => (
-                    <div key={d.from} className="text-center">
-                      <p className="text-[10px] text-gray-400">{d.from} → {d.to}</p>
-                      <p className="text-sm font-bold" style={{ color: d.pct >= 50 ? PRIMARY : '#D97706' }}>{d.pct}%</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Áreas jurídicas mais procuradas</h2>
-          <p className="text-xs text-gray-400 mb-4">Por interesse declarado no WhatsApp</p>
-          {procedureData.length === 0 ? (
-            <div className="h-52 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={procedureData} layout="vertical" margin={{ left: 8, right: 20, top: 4, bottom: 4 }}>
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <YAxis dataKey="name" type="category" width={160} tick={{ fontSize: 10, fill: '#374151' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="value" name="Contatos" radius={[0, 6, 6, 0]} isAnimationActive animationBegin={200}>
-                  {procedureData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* Horários de pico + Fonte */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Horários de pico</h2>
-          <p className="text-xs text-gray-400 mb-4">Contatos recebidos por hora do dia</p>
-          {isEmpty ? (
-            <div className="h-44 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={peakHourData} margin={{ left: -16, right: 8, top: 4, bottom: 0 }}>
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="contatos" name="Contatos" radius={[4, 4, 0, 0]} fill={PRIMARY} isAnimationActive animationBegin={300} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Canais de origem</h2>
-          <p className="text-xs text-gray-400 mb-4">Como os leads chegaram ao escritório</p>
-          {sourceData.length === 0 ? (
-            <div className="h-44 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
-          ) : (
-            <>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie
-                    data={sourceData}
-                    cx="50%" cy="50%"
-                    outerRadius={68}
-                    dataKey="value"
-                    paddingAngle={2}
-                    isAnimationActive
-                    animationBegin={200}
-                    animationDuration={800}
-                    label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-                    labelLine={false}
-                  >
-                    {sourceData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="flex flex-wrap justify-center gap-3 mt-1">
-                {sourceData.map((d, i) => (
-                  <div key={d.name} className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                    <span className="text-xs text-gray-500">{d.name}</span>
-                    <span className="text-xs font-semibold text-gray-700">{d.value}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Status dos agendamentos */}
-      <div className="card">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Status dos agendamentos</h2>
-        {statusData.length === 0 ? (
-          <div className="h-20 flex items-center justify-center text-sm text-gray-300">Sem agendamentos</div>
+      <motion.div variants={stagger(0, 0.06)} className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {!stats ? (
+          <SkeletonCards count={4} />
         ) : (
-          <div className="flex flex-wrap gap-4">
-            {statusData.map((d, i) => (
-              <div key={d.name} className="flex items-center gap-2 card py-2 px-4">
-                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-                <span className="text-sm text-gray-600">{d.name}</span>
-                <span className="text-sm font-bold" style={{ color: COLORS[i % COLORS.length] }}>{d.value}</span>
-              </div>
+          <>
+            <StatCard label="Contatos" subtitle="base completa do CRM" value={total} icon={<IconUsers className="w-5 h-5" />} />
+            <StatCard label="Triagem completa" subtitle={`${qualRate}% dos contatos`} value={qualified} icon={<IconScale className="w-5 h-5" />} />
+            <StatCard label="Conversão" subtitle="contato → consulta agendada" value={`${convRate}%`} icon={<IconTrendUp className="w-5 h-5" />} />
+            <StatCard
+              label="Tempo até agendar"
+              subtitle="média do 1º contato à consulta"
+              value={avgHoursToBook === null ? '—' : avgHoursToBook < 48 ? `${avgHoursToBook}h` : `${Math.round(avgHoursToBook / 24)}d`}
+              icon={<IconClock className="w-5 h-5" />}
+            />
+          </>
+        )}
+      </motion.div>
+
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <Section title="Funil completo" subtitle={`${clientRate}% dos contatos viraram cliente`}>
+          <div className="space-y-3.5">
+            {funnel.map((s, i) => (
+              <MeterRow
+                key={s.label}
+                label={s.label}
+                value={s.value}
+                total={total}
+                color={FUNNEL_RAMP[i]}
+                delay={0.1 + i * 0.07}
+              />
             ))}
           </div>
-        )}
-      </div>
+        </Section>
 
-      {/* Painel de escalações */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-700">Escalações recentes</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Atendimentos transferidos para a equipe</p>
-          </div>
-          {(escalations ?? []).length > 0 && (
-            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-50 text-amber-700">
-              {escalations!.length} total
-            </span>
+        <Section title="Onde as pessoas param" subtitle="retenção de uma etapa para a próxima">
+          {total === 0 ? (
+            <EmptyState title="Sem dados de funil ainda" />
+          ) : (
+            <div className="space-y-2.5">
+              {dropoffs.map((d, i) => {
+                const bad = d.keptPct < 50
+                return (
+                  <motion.div
+                    key={d.to}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.1 + i * 0.07, duration: 0.3 }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-line"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-ink truncate">{d.from} → {d.to}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {d.lost === 1 ? '1 pessoa não seguiu' : `${d.lost} pessoas não seguiram`}
+                      </p>
+                    </div>
+                    <span
+                      className="badge tabular-nums shrink-0"
+                      style={{
+                        background: bad ? '#FDECEA' : '#E9F4EE',
+                        color: bad ? STATUS.critical : STATUS.good,
+                      }}
+                    >
+                      {d.keptPct}% seguiu
+                    </span>
+                  </motion.div>
+                )
+              })}
+            </div>
           )}
-        </div>
-
-        {(escalations ?? []).length === 0 ? (
-          <div className="h-16 flex items-center justify-center text-sm text-gray-300">Nenhuma escalação registrada</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left pb-2 text-gray-400 font-medium pr-4">Cliente</th>
-                  <th className="text-left pb-2 text-gray-400 font-medium pr-4">Categoria</th>
-                  <th className="text-left pb-2 text-gray-400 font-medium pr-4">Motivo</th>
-                  <th className="text-right pb-2 text-gray-400 font-medium">Data</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {escalations!.map((e) => {
-                  const cat = ESC_CATEGORY[e.category] ?? ESC_CATEGORY.pedido_humano
-                  let dateStr = ''
-                  try { dateStr = format(parseISO(e.created_at), "dd/MM HH:mm", { locale: ptBR }) } catch { dateStr = e.created_at }
-                  return (
-                    <tr key={e.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="py-2.5 pr-4 font-medium text-gray-700">
-                        {e.nome ?? e.phone.slice(-4).padStart(8, '·')}
-                      </td>
-                      <td className="py-2.5 pr-4">
-                        <span
-                          className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                          style={{ color: cat.color, background: cat.bg }}
-                        >
-                          {cat.label}
-                        </span>
-                      </td>
-                      <td className="py-2.5 pr-4 text-gray-500 max-w-xs truncate">{e.reason || '—'}</td>
-                      <td className="py-2.5 text-right text-gray-400 whitespace-nowrap">{dateStr}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        </Section>
       </div>
-    </div>
+
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <Section title="Áreas procuradas" subtitle="volume por área de atuação">
+          {/* Ranking de uma medida só = um hue só. Cor aqui é magnitude, não identidade. */}
+          <Ranking
+            rows={areaRows}
+            total={areaRows[0]?.value ?? 1}
+            colorFor={() => SERIES[0]}
+            empty="Nenhuma área registrada ainda"
+          />
+        </Section>
+
+        <Section title="Por que perdemos" subtitle={`${lost} lead${lost !== 1 ? 's' : ''} encerrado${lost !== 1 ? 's' : ''} sem seguir`}>
+          <Ranking
+            rows={lossRows}
+            total={lossRows[0]?.value ?? 1}
+            colorFor={() => SERIES[3]}
+            empty="Nenhum lead marcado como perdido"
+          />
+        </Section>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <Section title="Como chegaram até o escritório" subtitle="origem declarada na triagem">
+          <Ranking
+            rows={sourceRows}
+            total={sourceRows[0]?.value ?? 1}
+            colorFor={() => SERIES[2]}
+            empty="Origem ainda não registrada"
+          />
+        </Section>
+
+        <Section
+          title="O que foi para triagem humana"
+          subtitle={`${escalations?.length ?? 0} escalação${(escalations?.length ?? 0) !== 1 ? 'ões' : ''} no total`}
+        >
+          {escRows.length === 0 ? (
+            <EmptyState icon={<IconGavel className="w-10 h-10" />} title="Nenhuma escalação registrada" />
+          ) : (
+            <Ranking
+              rows={escRows}
+              total={escRows[0]?.value ?? 1}
+              colorFor={(name) => (name === ESC_LABEL.urgencia_prazo ? STATUS.critical : SERIES[4])}
+              empty="Nenhuma escalação"
+            />
+          )}
+        </Section>
+      </div>
+
+      <Section title="Horário do primeiro contato" subtitle="quando as pessoas escrevem — dimensiona o plantão">
+        {total === 0 ? (
+          <EmptyState icon={<IconBarChart2 className="w-10 h-10" />} title="Sem contatos registrados" />
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={hourRows} margin={{ top: 6, right: 8, left: -20, bottom: 0 }} barCategoryGap={8}>
+              <XAxis dataKey="label" {...axisProps} />
+              <YAxis {...axisProps} allowDecimals={false} width={34} />
+              <Tooltip content={<ChartTooltip />} cursor={{ fill: '#14203308' }} />
+              <Bar dataKey="contatos" name="Contatos" radius={[4, 4, 0, 0]} animationBegin={150} animationDuration={700}>
+                {hourRows.map((r) => (
+                  <Cell key={r.label} fill={SERIES[0]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Section>
+    </Page>
   )
 }

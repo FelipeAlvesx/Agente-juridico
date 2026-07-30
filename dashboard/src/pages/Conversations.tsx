@@ -1,26 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, isToday, isYesterday } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { api, Message } from '../lib/api'
+import { api, Message, Lead } from '../lib/api'
 import { useFetch } from '../hooks/useFetch'
 import { RefreshBar } from '../components/RefreshBar'
-import { IconSearch, IconAlert } from '../components/Icon'
-
-function initials(nome: string, phone: string) {
-  if (nome) {
-    const parts = nome.trim().split(' ')
-    return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
-  }
-  return phone.slice(-4)
-}
-
-const AVATAR_COLORS = ['#7C3D6E', '#2D6E7C', '#2D7C3D', '#7C6E2D', '#3D2D7C']
-function avatarColor(phone: string) {
-  let h = 0
-  for (const c of phone) h = (h * 31 + c.charCodeAt(0)) & 0xffff
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]
-}
+import { EmptyState } from '../components/Page'
+import { initials, hueFor, shortPhone, shortArea, URGENCIA } from '../lib/theme'
+import { pageVariants, quick, springy } from '../lib/motion'
+import { IconSearch, IconAlert, IconChat, IconWhatsApp } from '../components/Icon'
 
 function relativeTime(iso: string | null) {
   if (!iso) return ''
@@ -32,35 +21,87 @@ function relativeTime(iso: string | null) {
   } catch { return '' }
 }
 
-function ChatBubble({ msg }: { msg: Message }) {
-  const isLara = msg.role === 'assistant'
+/** Cabeçalho de dia entre os balões — a conversa pode durar semanas. */
+function DayDivider({ label }: { label: string }) {
   return (
-    <div className={`flex ${isLara ? 'justify-end' : 'justify-start'} mb-2`}>
-      <div
-        className={`max-w-[72%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
-          isLara
-            ? 'bg-primary text-white rounded-tr-sm'
-            : 'bg-gray-100 text-gray-800 rounded-tl-sm'
-        }`}
-      >
-        <p className="whitespace-pre-wrap">{msg.content}</p>
-        <p className={`text-[10px] mt-1 ${isLara ? 'text-white/60 text-right' : 'text-gray-400'}`}>
-          {msg.timestamp ? format(parseISO(msg.timestamp), 'HH:mm · d MMM', { locale: ptBR }) : ''}
-        </p>
-      </div>
+    <div className="flex items-center gap-3 my-4">
+      <div className="flex-1 h-px bg-line" />
+      <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{label}</span>
+      <div className="flex-1 h-px bg-line" />
     </div>
   )
 }
 
-function EmptyChat() {
+function ChatBubble({ msg, index, agentName }: { msg: Message; index: number; agentName: string }) {
+  const isAgent = msg.role === 'assistant'
   return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-300">
-      <svg className="w-14 h-14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2"
-          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
-      </svg>
-      <p className="text-sm">Selecione uma conversa para visualizar</p>
-    </div>
+    <motion.div
+      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ ...springy, delay: Math.min(index * 0.025, 0.4) }}
+      className={`flex ${isAgent ? 'justify-end' : 'justify-start'} mb-1.5`}
+    >
+      <div
+        className={`max-w-[68%] px-4 py-2.5 text-[13px] leading-relaxed shadow-card ${
+          isAgent
+            ? 'bg-primary text-white rounded-2xl rounded-br-md'
+            : 'bg-surface-2 text-ink border border-line rounded-2xl rounded-bl-md'
+        }`}
+      >
+        {isAgent && (
+          <p className="text-[10px] font-semibold text-white/60 mb-1 uppercase tracking-wide">{agentName}</p>
+        )}
+        <p className="whitespace-pre-wrap">{msg.content}</p>
+        <p className={`text-[10px] mt-1.5 ${isAgent ? 'text-white/50 text-right' : 'text-slate-400'}`}>
+          {msg.timestamp ? format(parseISO(msg.timestamp), 'HH:mm', { locale: ptBR }) : ''}
+        </p>
+      </div>
+    </motion.div>
+  )
+}
+
+/** Ficha do lead ao lado do chat — o advogado precisa do caso, não só do texto. */
+function CaseCard({ lead }: { lead: Lead }) {
+  const urg = lead.urgencia ? URGENCIA[lead.urgencia] : null
+  const rows = [
+    ['Área', shortArea(lead.area_juridica)],
+    ['Origem', lead.origem ?? ''],
+  ].filter(([, v]) => v)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={quick}
+      className="mx-5 mt-4 rounded-xl border border-line bg-surface-2 px-4 py-3"
+    >
+      <div className="flex items-center gap-2 flex-wrap mb-2">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Triagem</span>
+        {urg && (
+          <span className="badge text-[10px]" style={{ background: urg.bg, color: urg.color }}>
+            {urg.label}
+          </span>
+        )}
+        {!lead.qualified && (
+          <span className="badge bg-slate-100 text-slate-500 text-[10px]">incompleta</span>
+        )}
+      </div>
+      {lead.resumo_caso ? (
+        <p className="text-[13px] text-slate-700 leading-relaxed">{lead.resumo_caso}</p>
+      ) : (
+        <p className="text-[13px] text-slate-300 italic">resumo do caso ainda não registrado</p>
+      )}
+      {rows.length > 0 && (
+        <div className="flex gap-5 mt-2.5 pt-2.5 border-t border-line">
+          {rows.map(([k, v]) => (
+            <div key={k}>
+              <p className="text-[10px] uppercase tracking-wider text-slate-400">{k}</p>
+              <p className="text-xs text-ink">{v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
   )
 }
 
@@ -74,14 +115,16 @@ export function Conversations() {
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   const { data: conversations, refetch, lastUpdated, loading } = useFetch(() => api.getConversations())
+  const { data: leads } = useFetch(() => api.getLeads({ limit: 500 }))
+  const { data: config } = useFetch(() => api.getConfig(), 300_000)
 
-  const escalatedCount = (conversations ?? []).filter(c => c.escalated).length
+  const agentName = config?.agent_name ?? 'Agente'
+  const escalatedCount = (conversations ?? []).filter((c) => c.escalated).length
 
-  const filtered = (conversations ?? []).filter(c => {
+  const filtered = (conversations ?? []).filter((c) => {
     const q = query.toLowerCase()
     const matchesQuery = !q || c.nome.toLowerCase().includes(q) || c.phone.includes(q)
-    const matchesFilter = !filterEscalated || c.escalated
-    return matchesQuery && matchesFilter
+    return matchesQuery && (!filterEscalated || c.escalated)
   })
 
   useEffect(() => {
@@ -102,155 +145,207 @@ export function Conversations() {
     setSearchParams({ phone })
   }
 
-  const selected = conversations?.find(c => c.phone === selectedPhone)
+  const selected = conversations?.find((c) => c.phone === selectedPhone)
+  const selectedLead = leads?.find((l) => l.phone === selectedPhone)
+
+  /* Agrupa por dia para intercalar os divisores. */
+  const grouped = useMemo(() => {
+    const out: { day: string; items: { msg: Message; i: number }[] }[] = []
+    ;(messages ?? []).forEach((msg, i) => {
+      let day = 'Sem data'
+      try {
+        const d = parseISO(msg.timestamp)
+        day = isToday(d) ? 'Hoje' : isYesterday(d) ? 'Ontem' : format(d, "d 'de' MMMM", { locale: ptBR })
+      } catch { /* mantém o fallback */ }
+      const last = out[out.length - 1]
+      if (last?.day === day) last.items.push({ msg, i })
+      else out.push({ day, items: [{ msg, i }] })
+    })
+    return out
+  }, [messages])
 
   return (
-    <div className="animate-fade-in pb-8 h-[calc(100vh-6rem)]">
-      <div className="flex h-full gap-0 card p-0 overflow-hidden">
+    <motion.div
+      variants={pageVariants}
+      initial="initial" animate="animate" exit="exit"
+      className="h-[calc(100vh-3.5rem)] flex flex-col"
+    >
+      <div className="flex flex-1 min-h-0 card-flush">
 
-        {/* Sidebar — conversation list */}
-        <div className="w-72 shrink-0 border-r border-gray-100 flex flex-col">
-          {/* Search + filter */}
-          <div className="p-3 border-b border-gray-100 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-500 px-1">Conversas</span>
+        {/* Lista de conversas */}
+        <div className="w-[19rem] shrink-0 border-r border-line flex flex-col bg-surface-2">
+          <div className="p-3 border-b border-line space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="font-display text-[13px] font-semibold text-ink">Conversas</span>
               <RefreshBar refetch={refetch} lastUpdated={lastUpdated} loading={loading} />
             </div>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none">
                 <IconSearch className="w-3.5 h-3.5" />
               </span>
               <input
-                type="text"
-                placeholder="Buscar..."
+                type="search"
+                placeholder="Buscar contato…"
                 value={query}
-                onChange={e => setQuery(e.target.value)}
-                className="input pl-8 py-2 text-sm"
+                onChange={(e) => setQuery(e.target.value)}
+                className="input pl-8 !py-2 text-[13px]"
               />
             </div>
             {escalatedCount > 0 && (
-              <button
-                onClick={() => setFilterEscalated(f => !f)}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setFilterEscalated((f) => !f)}
                 className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   filterEscalated
-                    ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                    ? 'bg-brass/15 text-brass ring-1 ring-brass/25'
+                    : 'bg-surface text-slate-500 border border-line hover:border-brass/30'
                 }`}
               >
                 <IconAlert className="w-3.5 h-3.5" />
-                {escalatedCount} escalada{escalatedCount !== 1 ? 's' : ''}
+                {escalatedCount} na triagem
                 {filterEscalated && <span className="ml-auto">✕</span>}
-              </button>
+              </motion.button>
             )}
           </div>
 
-          {/* List */}
           <div className="flex-1 overflow-y-auto">
             {filtered.length === 0 && (
-              <div className="py-12 text-center">
-                <p className="text-sm text-gray-300">
-                  {query || filterEscalated ? 'Nenhum resultado' : 'Sem conversas ainda'}
-                </p>
-              </div>
+              <p className="py-12 text-center text-sm text-slate-300">
+                {query || filterEscalated ? 'Nenhum resultado' : 'Sem conversas ainda'}
+              </p>
             )}
-            {filtered.map(conv => (
-              <button
-                key={conv.phone}
-                onClick={() => selectConversation(conv.phone)}
-                className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-surface-2 transition-colors flex items-start gap-3 ${
-                  selectedPhone === conv.phone ? 'bg-purple-50 border-l-2 border-l-primary' : ''
-                }`}
-              >
-                <div className="relative shrink-0">
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold mt-0.5"
-                    style={{ background: avatarColor(conv.phone) }}
+            <AnimatePresence initial={false}>
+              {filtered.map((conv, i) => {
+                const active = selectedPhone === conv.phone
+                return (
+                  <motion.button
+                    key={conv.phone}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ delay: Math.min(i * 0.02, 0.25), duration: 0.24 }}
+                    onClick={() => selectConversation(conv.phone)}
+                    className={`relative w-full text-left px-4 py-3 border-b border-line/60 transition-colors flex items-start gap-3 ${
+                      active ? 'bg-surface' : 'hover:bg-surface'
+                    }`}
                   >
-                    {initials(conv.nome, conv.phone)}
-                  </div>
-                  {conv.escalated && (
-                    <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-white flex items-center justify-center">
-                      <span className="text-white text-[7px] font-bold leading-none">!</span>
-                    </span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-sm font-semibold text-gray-900 truncate">
-                      {conv.nome || conv.phone}
-                    </span>
-                    <span className="text-[10px] text-gray-400 shrink-0 ml-1">
-                      {relativeTime(conv.last_ts)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {conv.escalated && (
-                      <span className="text-[10px] bg-amber-100 text-amber-600 px-1 rounded font-medium shrink-0">
-                        escalada
-                      </span>
+                    {active && (
+                      <motion.span
+                        layoutId="conv-active"
+                        transition={springy}
+                        className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary"
+                      />
                     )}
-                    <p className={`text-xs truncate ${
-                      conv.last_role === 'assistant' ? 'text-primary/80' : 'text-gray-500'
-                    }`}>
-                      {conv.last_role === 'assistant' && <span className="font-medium">Lara: </span>}
-                      {conv.last_message}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            ))}
+                    <div className="relative shrink-0">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold"
+                        style={{ background: hueFor(conv.phone) }}
+                      >
+                        {initials(conv.nome, conv.phone)}
+                      </div>
+                      {conv.escalated && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-brass rounded-full border-2 border-surface-2 flex items-center justify-center">
+                          <span className="text-white text-[7px] font-bold leading-none">!</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <span className="text-[13px] font-semibold text-ink truncate">
+                          {conv.nome || shortPhone(conv.phone)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">
+                          {relativeTime(conv.last_ts)}
+                        </span>
+                      </div>
+                      <p className={`text-xs truncate ${conv.last_role === 'assistant' ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {conv.last_role === 'assistant' && (
+                          <span className="font-medium text-primary/70">{agentName}: </span>
+                        )}
+                        {conv.last_message}
+                      </p>
+                    </div>
+                  </motion.button>
+                )
+              })}
+            </AnimatePresence>
           </div>
 
           {conversations && (
-            <div className="p-3 border-t border-gray-100">
-              <p className="text-[10px] text-gray-400 text-center">
-                {conversations.length} conversa{conversations.length !== 1 ? 's' : ''}
+            <div className="p-2.5 border-t border-line">
+              <p className="text-[10px] text-slate-400 text-center">
+                {conversations.length} conversa{conversations.length !== 1 ? 's' : ''} · atualiza a cada 30s
               </p>
             </div>
           )}
         </div>
 
-        {/* Chat panel */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
-          {selected ? (
-            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-3">
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-                style={{ background: avatarColor(selected.phone) }}
+        {/* Painel do chat */}
+        <div className="flex-1 flex flex-col min-w-0 bg-surface">
+          <AnimatePresence mode="wait">
+            {selected ? (
+              <motion.div
+                key={selected.phone}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={quick}
+                className="px-5 py-3.5 border-b border-line flex items-center gap-3"
               >
-                {initials(selected.nome, selected.phone)}
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                  style={{ background: hueFor(selected.phone) }}
+                >
+                  {initials(selected.nome, selected.phone)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-ink flex items-center gap-2">
+                    <span className="truncate">{selected.nome || shortPhone(selected.phone)}</span>
+                    {selected.escalated && (
+                      <span className="badge bg-brass/12 text-brass text-[10px] shrink-0">
+                        aguardando advogado
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-400 tabular-nums">{shortPhone(selected.phone)}</p>
+                </div>
+                <a
+                  href={`https://wa.me/${shortPhone(selected.phone).replace(/\D/g, '')}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary !py-1.5 text-xs shrink-0"
+                >
+                  <IconWhatsApp className="w-3.5 h-3.5" /> Assumir
+                </a>
+              </motion.div>
+            ) : (
+              <div key="none" className="px-5 py-3.5 border-b border-line">
+                <p className="font-display text-sm font-semibold text-ink">Histórico</p>
+                {/* Sem artigo antes do nome: agent_name é configurável e não sabemos o gênero. */}
+                <p className="text-xs text-slate-400">Todo o atendimento feito no WhatsApp</p>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  {selected.nome || selected.phone}
-                  {selected.escalated && (
-                    <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full font-medium">
-                      escalada para humano
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-gray-400">{selected.phone}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="px-5 py-3.5 border-b border-gray-100">
-              <p className="text-sm font-semibold text-gray-900">Conversas</p>
-              <p className="text-xs text-gray-400">Histórico de mensagens com a Lara</p>
-            </div>
-          )}
+            )}
+          </AnimatePresence>
 
-          {/* Messages */}
+          {selectedLead && <CaseCard lead={selectedLead} />}
+
           <div className="flex-1 overflow-y-auto px-5 py-4">
-            {!selectedPhone && <EmptyChat />}
+            {!selectedPhone && (
+              <EmptyState
+                icon={<IconChat className="w-12 h-12" />}
+                title="Selecione uma conversa"
+                hint="O histórico completo fica guardado mesmo depois que a sessão do agente expira."
+                className="h-full"
+              />
+            )}
 
             {loadingChat && (
               <div className="space-y-3 py-4">
-                {[1, 2, 3, 4].map(i => (
+                {[1, 2, 3, 4, 5].map((i) => (
                   <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : ''}`}>
                     <div
-                      className="skeleton h-10 rounded-2xl"
-                      style={{ width: `${40 + (i * 13) % 30}%`, animationDelay: `${i * 0.1}s` }}
+                      className="skeleton h-11 rounded-2xl"
+                      style={{ width: `${38 + (i * 13) % 30}%`, animationDelay: `${i * 0.09}s` }}
                     />
                   </div>
                 ))}
@@ -258,20 +353,25 @@ export function Conversations() {
             )}
 
             {!loadingChat && messages?.length === 0 && selectedPhone && (
-              <div className="flex-1 flex flex-col items-center justify-center gap-2 py-20 text-gray-300">
-                <p className="text-sm">Nenhuma mensagem encontrada para este contato.</p>
-              </div>
+              <EmptyState title="Nenhuma mensagem" hint="Este contato existe no CRM, mas não tem histórico gravado." />
             )}
 
-            {!loadingChat && messages && messages.length > 0 && (
+            {!loadingChat && grouped.length > 0 && (
               <>
-                {messages.map((msg, i) => <ChatBubble key={i} msg={msg} />)}
+                {grouped.map((g) => (
+                  <div key={g.day}>
+                    <DayDivider label={g.day} />
+                    {g.items.map(({ msg, i }) => (
+                      <ChatBubble key={i} msg={msg} index={i} agentName={agentName} />
+                    ))}
+                  </div>
+                ))}
                 <div ref={chatEndRef} />
               </>
             )}
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }

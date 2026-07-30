@@ -131,11 +131,26 @@ _CONVERSATIONS = [
     ]),
 ]
 
+# (lead_idx, days_ago, category, reason)
+# category tem que ser uma de ESCALATION_CATEGORIES em verticals/advocacia/tools.py —
+# é ela que ordena a fila da Triagem no CRM (prazo primeiro).
 _ESCALATIONS = [
-    (13, 3, "urgencia: familiar preso em flagrante, advogado acionado imediatamente"),
-    (4,  9, "fora_escopo: cliente pediu orientação jurídica sobre processar empregador atual"),
-    (9,  5, "medica: relato de assédio moral com afastamento, pediu falar com advogado direto"),
-    (19, 0, "pedido_humano: pediu falar com uma pessoa e não respondeu mais"),
+    (13, 3, "urgencia_prazo",
+     "Familiar preso em flagrante ontem à noite, perguntou sobre audiência de custódia"),
+    (12, 2, "urgencia_prazo",
+     "Recebeu intimação com prazo correndo e quer saber o que fazer"),
+    (4,  9, "consulta_juridica",
+     "Pediu opinião sobre processar o empregador enquanto ainda está na empresa"),
+    (7,  6, "processo_em_andamento",
+     "Já tem ação em curso com outro advogado e quer falar sobre o andamento"),
+    (9,  5, "consulta_juridica",
+     "Relato de assédio moral com afastamento, pediu orientação sobre o que configura o caso"),
+    (2,  4, "reclamacao",
+     "Achou que demorou para ter retorno do escritório depois do primeiro contato"),
+    (19, 0, "pedido_humano",
+     "Pediu para falar com uma pessoa e não respondeu mais"),
+    (17, 1, "confusao_repetida",
+     "Não conseguiu descrever o caso depois de três tentativas do agente"),
 ]
 
 
@@ -237,9 +252,12 @@ def run_seed() -> None:
             conn.execute("INSERT INTO sessions (phone, role, content, ts) VALUES (?, 'user', ?, ?)", (jid, user_msg, ts))
             conn.execute("INSERT INTO sessions (phone, role, content, ts) VALUES (?, 'assistant', ?, ?)", (jid, assistant_msg, ts + 30))
 
-    for lead_idx, days_ago, reason in _ESCALATIONS:
+    for lead_idx, days_ago, category, reason in _ESCALATIONS:
         jid = _LEADS[lead_idx][0] + "@s.whatsapp.net"
-        conn.execute("INSERT INTO escalations (phone, reason, created_at) VALUES (?, ?, ?)", (jid, reason, _ts(days_ago)))
+        conn.execute(
+            "INSERT INTO escalations (phone, category, reason, created_at) VALUES (?, ?, ?, ?)",
+            (jid, category, reason, _ts(days_ago)),
+        )
 
     conn.commit()
     conn.close()

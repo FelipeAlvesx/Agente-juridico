@@ -5,29 +5,29 @@ type Status =
   | 'novo' | 'qualificado' | 'consulta_agendada' | 'cliente' | 'perdido'
 
 const styles: Record<Status, string> = {
-  pending:               'bg-amber-100 text-amber-700',
-  confirmed:             'bg-emerald-100 text-emerald-700',
-  rejected:              'bg-red-100 text-red-600',
-  cancelled:             'bg-gray-100 text-gray-500',
-  qualified:             'bg-purple-100 text-purple-700',
-  new:                   'bg-sky-100 text-sky-700',
-  returning:             'bg-teal-100 text-teal-700',
-  reschedule_requested:  'bg-blue-100 text-blue-700',
-  cancel_requested:      'bg-orange-100 text-orange-700',
-  novo:                  'bg-sky-100 text-sky-700',
-  qualificado:           'bg-purple-100 text-purple-700',
-  consulta_agendada:     'bg-amber-100 text-amber-700',
-  cliente:               'bg-emerald-100 text-emerald-700',
-  perdido:               'bg-gray-100 text-gray-500',
+  pending:               'bg-brass/12 text-brass',
+  confirmed:             'bg-emerald-50 text-emerald-800',
+  rejected:              'bg-red-50 text-red-700',
+  cancelled:             'bg-slate-100 text-slate-500',
+  qualified:             'bg-primary/10 text-primary',
+  new:                   'bg-sky-50 text-sky-800',
+  returning:             'bg-teal-50 text-teal-800',
+  reschedule_requested:  'bg-indigo-50 text-indigo-700',
+  cancel_requested:      'bg-orange-50 text-orange-800',
+  novo:                  'bg-sky-50 text-sky-800',
+  qualificado:           'bg-primary/10 text-primary',
+  consulta_agendada:     'bg-brass/12 text-brass',
+  cliente:               'bg-emerald-50 text-emerald-800',
+  perdido:               'bg-slate-100 text-slate-500',
 }
 
 const labels: Record<Status, string> = {
-  pending:               'Pendente',
-  confirmed:             'Confirmado',
-  rejected:              'Rejeitado',
-  cancelled:             'Cancelado',
+  pending:               'Aguardando confirmação',
+  confirmed:             'Confirmada',
+  rejected:              'Recusada',
+  cancelled:             'Cancelada',
   qualified:             'Qualificado',
-  new:                   'Primeira vez',
+  new:                   'Primeiro contato',
   returning:             'Retorno',
   reschedule_requested:  'Remarcação pendente',
   cancel_requested:      'Cancelamento pendente',
@@ -38,9 +38,11 @@ const labels: Record<Status, string> = {
   perdido:               'Perdido',
 }
 
-export function StatusBadge({ status }: { status: Status }) {
+/** Ponto de cor + rótulo: identidade nunca fica só na cor. */
+export function StatusBadge({ status, dot = false }: { status: Status; dot?: boolean }) {
   return (
-    <span className={`badge ${styles[status] ?? 'bg-gray-100 text-gray-500'}`}>
+    <span className={`badge ${styles[status] ?? 'bg-slate-100 text-slate-500'}`}>
+      {dot && <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />}
       {labels[status] ?? status}
     </span>
   )

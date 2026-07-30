@@ -4,126 +4,139 @@
 
 @layer base {
   body {
-    @apply bg-bg font-sans text-gray-800 antialiased;
+    @apply bg-bg font-sans text-ink antialiased;
+    /* Papel: trama levíssima para o fundo não ler como cinza morto. */
+    background-image:
+      radial-gradient(circle at 18% -10%, rgba(46, 95, 163, 0.05), transparent 42%),
+      radial-gradient(circle at 96% 0%, rgba(176, 124, 30, 0.05), transparent 34%);
+    background-attachment: fixed;
   }
   * {
     @apply box-border;
   }
+  h1, h2, h3 {
+    @apply text-ink;
+  }
+  /* Fraunces é variável: sem WONK/SOFT ela fica institucional, não decorativa. */
+  .font-display {
+    font-variation-settings: 'SOFT' 0, 'WONK' 0;
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: #d6b06a55;
+  }
 }
 
 @layer components {
+  /* ── Botões ── */
   .btn-primary {
-    @apply bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary-dark transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95;
+    @apply inline-flex items-center justify-center gap-1.5 bg-primary text-white px-4 py-2 rounded-xl text-sm font-medium
+           shadow-sm hover:bg-primary-dark transition-colors duration-200
+           disabled:opacity-45 disabled:cursor-not-allowed;
   }
   .btn-secondary {
-    @apply bg-surface text-gray-700 px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50 active:scale-95;
+    @apply inline-flex items-center justify-center gap-1.5 bg-surface text-ink px-4 py-2 rounded-xl text-sm font-medium
+           border border-line hover:bg-surface-2 hover:border-primary/30 transition-colors duration-200
+           disabled:opacity-45 disabled:cursor-not-allowed;
   }
   .btn-ghost {
-    @apply text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-100 transition-all duration-200 active:scale-95;
+    @apply inline-flex items-center justify-center gap-1.5 text-slate-500 px-4 py-2 rounded-xl text-sm font-medium
+           hover:bg-ink/5 hover:text-ink transition-colors duration-200 disabled:opacity-45;
   }
+  .btn-brass {
+    @apply inline-flex items-center justify-center gap-1.5 bg-brass text-white px-4 py-2 rounded-xl text-sm font-medium
+           shadow-sm hover:brightness-95 transition-all duration-200 disabled:opacity-45;
+  }
+
+  /* ── Superfícies ── */
   .card {
-    @apply bg-surface rounded-2xl border border-gray-100 shadow-sm p-5;
+    @apply bg-surface rounded-2xl border border-line shadow-card p-5;
   }
-  .card-hover {
-    @apply card transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer;
+  .card-flush {
+    @apply bg-surface rounded-2xl border border-line shadow-card overflow-hidden;
+  }
+  .panel-title {
+    @apply font-display text-[15px] font-semibold text-ink;
+  }
+  .panel-sub {
+    @apply text-xs text-slate-400 mt-0.5;
   }
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
+  .th {
+    @apply text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-3;
+  }
+
+  /* ── Entrada ── */
   .input {
-    @apply w-full bg-surface border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all duration-200;
+    @apply w-full bg-surface border border-line rounded-xl px-4 py-2.5 text-sm text-ink placeholder-slate-300
+           focus:outline-none focus:ring-2 focus:ring-primary-light/25 focus:border-primary-light
+           transition-shadow duration-200;
   }
+  .label {
+    @apply block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5;
+  }
+
+  /* ── Tabs / filtros ── */
   .tab-btn {
-    @apply px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200;
+    @apply relative px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors duration-200;
   }
   .tab-btn-active {
-    @apply tab-btn bg-primary text-white shadow-sm;
+    @apply tab-btn bg-ink text-white;
   }
   .tab-btn-inactive {
-    @apply tab-btn text-gray-600 hover:bg-gray-100;
+    @apply tab-btn text-slate-500 hover:text-ink hover:bg-ink/5;
+  }
+
+  /* Régua de latão: marca a seção sem gritar. */
+  .rule-brass {
+    @apply h-px w-full bg-gradient-to-r from-brass/45 via-line to-transparent;
   }
 }
 
-/* ── Animations ── */
-@keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(14px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ── Keyframes (o que o framer-motion não cobre: loops e loading) ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
 }
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(24px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-@keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to   { opacity: 1; transform: scale(1); }
-}
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.6; }
-}
-@keyframes spin-slow {
-  to { transform: rotate(360deg); }
-}
 
-.animate-fade-in {
-  animation: fadeIn 0.35s ease-out forwards;
-}
-.animate-fade-in-up {
-  animation: fadeInUp 0.4s ease-out forwards;
-}
-.animate-slide-right {
-  animation: slideInRight 0.3s ease-out forwards;
-}
-.animate-scale-in {
-  animation: scaleIn 0.25s ease-out forwards;
-}
-.animate-pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
-}
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
-}
+.animate-fade-in    { animation: fadeIn 0.35s ease-out forwards; }
+.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+.animate-spin-slow  { animation: spin-slow 3s linear infinite; }
 
-/* Staggered children */
-.stagger > * { opacity: 0; animation: fadeInUp 0.4s ease-out forwards; }
-.stagger > *:nth-child(1) { animation-delay: 0.04s; }
-.stagger > *:nth-child(2) { animation-delay: 0.08s; }
-.stagger > *:nth-child(3) { animation-delay: 0.12s; }
-.stagger > *:nth-child(4) { animation-delay: 0.16s; }
-.stagger > *:nth-child(5) { animation-delay: 0.20s; }
-.stagger > *:nth-child(6) { animation-delay: 0.24s; }
-.stagger > *:nth-child(7) { animation-delay: 0.28s; }
-.stagger > *:nth-child(8) { animation-delay: 0.32s; }
-
-/* Skeleton shimmer */
+/* Skeleton shimmer — tons de papel, não cinza de sistema. */
 .skeleton {
-  background: linear-gradient(90deg, #f0efec 25%, #e8e7e4 50%, #f0efec 75%);
+  background: linear-gradient(90deg, #eeeae2 25%, #e2ddd2 50%, #eeeae2 75%);
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.4s infinite;
   border-radius: 8px;
 }
 
-/* Calendar */
-.cal-day { @apply relative min-h-[100px] p-1.5 border-b border-r border-gray-100 transition-colors duration-150 hover:bg-gray-50/60; }
-.cal-day-today { @apply bg-primary/5; }
+/* ── Calendário ── */
+.cal-day { @apply relative min-h-[100px] p-1.5 border-b border-r border-line transition-colors duration-150 hover:bg-surface-2; }
+.cal-day-today { @apply bg-brass/8; }
 .cal-day-outside { @apply opacity-40; }
 .cal-event {
   @apply text-xs rounded-md px-1.5 py-0.5 mb-0.5 truncate cursor-pointer transition-all duration-150 hover:brightness-95 hover:shadow-sm;
 }
-.cal-event-pending    { @apply bg-amber-100 text-amber-800; }
-.cal-event-confirmed  { @apply bg-emerald-100 text-emerald-800; }
-.cal-event-cancelled  { @apply bg-gray-100 text-gray-500; }
-.cal-event-rejected   { @apply bg-red-100 text-red-700; }
+.cal-event-pending    { @apply bg-brass/15 text-brass; }
+.cal-event-confirmed  { @apply bg-primary/10 text-primary; }
+.cal-event-cancelled  { @apply bg-slate-100 text-slate-400; }
+.cal-event-rejected   { @apply bg-red-50 text-red-700; }
 
-/* Toggle switch */
+/* ── Toggle ── */
 .toggle-track {
   @apply relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-200 cursor-pointer;
 }
@@ -131,8 +144,17 @@
   @apply absolute left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 7px; height: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+::-webkit-scrollbar-thumb { background: #d8d2c6; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #b9b1a1; }
+
+/* Respeita quem pediu menos movimento — motion design não é imposição. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

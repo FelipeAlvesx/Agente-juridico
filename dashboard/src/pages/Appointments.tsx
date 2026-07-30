@@ -1,16 +1,22 @@
 import { useState, useMemo, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   format, parseISO, startOfMonth, endOfMonth,
   startOfWeek, endOfWeek, eachDayOfInterval,
   isSameMonth, isToday, addMonths, subMonths,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { api, Appointment, Service } from '../lib/api'
+import { api, Appointment, Service, needsAction } from '../lib/api'
 import { useFetch } from '../hooks/useFetch'
 import { StatusBadge } from '../components/StatusBadge'
-import { IconChevronLeft, IconChevronRight, IconPlus, IconClose, IconClock, IconPhone } from '../components/Icon'
-
-type View = 'month' | 'week' | 'day'
+import { RefreshBar } from '../components/RefreshBar'
+import { Page, PageHeader, Reveal, EmptyState } from '../components/Page'
+import { shortArea, shortPhone, initials, hueFor } from '../lib/theme'
+import { modalBackdrop, modalPanel, quick, springy } from '../lib/motion'
+import {
+  IconChevronLeft, IconChevronRight, IconPlus, IconClose,
+  IconClock, IconPhone, IconCalendar, IconCheck, IconUsers, IconWhatsApp,
+} from '../components/Icon'
 
 interface AptForm {
   nome: string
@@ -22,9 +28,14 @@ interface AptForm {
   status: 'confirmed' | 'pending'
 }
 
+const ACTION_LABEL: Record<string, string> = {
+  pending:              'quer confirmação',
+  reschedule_requested: 'pediu para remarcar',
+  cancel_requested:     'pediu para cancelar',
+}
+
 function NewAppointmentModal({
-  onSave,
-  onClose,
+  onSave, onClose,
 }: {
   onSave: (form: AptForm) => Promise<void>
   onClose: () => void
@@ -69,50 +80,60 @@ function NewAppointmentModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-scale-in">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">Novo Agendamento</h2>
+    <motion.div
+      variants={modalBackdrop}
+      initial="initial" animate="animate" exit="exit"
+      onClick={onClose}
+      className="fixed inset-0 bg-ink/40 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+    >
+      <motion.div
+        variants={modalPanel}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-surface rounded-2xl shadow-panel border border-line w-full max-w-md max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line sticky top-0 bg-surface">
+          <div>
+            <h2 className="font-display text-base font-semibold text-ink">Marcar consulta</h2>
+            <p className="text-xs text-slate-400">registro manual, fora do WhatsApp</p>
+          </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+            className="p-1.5 text-slate-400 hover:text-ink hover:bg-ink/5 rounded-lg transition-colors"
           >
             <IconClose className="w-4 h-4" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">Nome do paciente</label>
-              <input
-                className="input"
-                value={form.nome}
-                onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
-                placeholder="Ex: Maria Silva"
-                required
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">Telefone</label>
-              <input
-                className="input"
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                placeholder="5511999999999"
-                required
-              />
-            </div>
+          <div>
+            <label className="label">Nome do cliente</label>
+            <input
+              className="input"
+              value={form.nome}
+              onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+              placeholder="Ex.: Maria Silva"
+              required
+            />
+          </div>
+          <div>
+            <label className="label">Telefone (com DDI e DDD)</label>
+            <input
+              className="input"
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+              placeholder="5511999999999"
+              required
+            />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Procedimento</label>
+            <label className="label">Tipo de consulta ou área</label>
             <input
               list="apt-procedures"
               className="input"
               value={form.procedure}
               onChange={(e) => handleServiceChange(e.target.value)}
-              placeholder="Selecione ou digite o procedimento"
+              placeholder="Consulta inicial, Direito Trabalhista…"
               required
             />
             <datalist id="apt-procedures">
@@ -124,7 +145,7 @@ function NewAppointmentModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Data e hora</label>
+              <label className="label">Data e hora</label>
               <input
                 type="datetime-local"
                 className="input"
@@ -134,7 +155,7 @@ function NewAppointmentModal({
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Duração (min)</label>
+              <label className="label">Duração (min)</label>
               <input
                 type="number"
                 className="input"
@@ -148,62 +169,73 @@ function NewAppointmentModal({
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Observações</label>
+            <label className="label">Observações internas</label>
             <input
               className="input"
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="Opcional"
+              placeholder="Opcional — visível só no CRM"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <label className="label">Situação</label>
             <select
               className="input"
               value={form.status}
               onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as AptForm['status'] }))}
             >
-              <option value="confirmed">Confirmado</option>
-              <option value="pending">Pendente</option>
+              <option value="confirmed">Já confirmada</option>
+              <option value="pending">Aguardando confirmação</option>
             </select>
           </div>
 
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
 
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">
-              Cancelar
-            </button>
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
             <button type="submit" disabled={saving} className="btn-primary flex-1">
-              {saving ? 'Salvando…' : 'Criar agendamento'}
+              {saving ? 'Salvando…' : 'Marcar consulta'}
             </button>
           </div>
         </form>
+      </motion.div>
+    </motion.div>
+  )
+}
+
+const STATUS_EVENT_CLASS: Record<Appointment['status'], string> = {
+  pending:              'cal-event-pending',
+  confirmed:            'cal-event-confirmed',
+  cancelled:            'cal-event-cancelled',
+  rejected:             'cal-event-rejected',
+  reschedule_requested: 'cal-event-pending',
+  cancel_requested:     'cal-event-pending',
+}
+
+const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+
+function DetailField({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2.5">
+      <span className="text-slate-300 mt-0.5 shrink-0">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">{label}</p>
+        <p className="text-[13px] text-ink">{children}</p>
       </div>
     </div>
   )
 }
 
-const STATUS_EVENT_CLASS: Record<Appointment['status'], string> = {
-  pending:               'cal-event-pending',
-  confirmed:             'cal-event-confirmed',
-  cancelled:             'cal-event-cancelled',
-  rejected:              'cal-event-rejected',
-  reschedule_requested:  'cal-event-pending',
-  cancel_requested:      'cal-event-pending',
-}
-
-const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-
 export function Appointments() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
-  const [view, setView] = useState<View>('month')
   const [selected, setSelected] = useState<Appointment | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
   const [showCreate, setShowCreate] = useState(false)
 
-  const { data: appointments, refetch } = useFetch(() => api.getAppointments())
+  const { data: appointments, refetch, lastUpdated, loading } = useFetch(() => api.getAppointments())
 
   async function handleCreate(form: AptForm) {
     const dt = new Date(form.datetime_local)
@@ -220,24 +252,30 @@ export function Appointments() {
     refetch()
   }
 
-  /* Build calendar grid */
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 })
     const end   = endOfWeek(endOfMonth(currentMonth),     { weekStartsOn: 1 })
     return eachDayOfInterval({ start, end })
   }, [currentMonth])
 
-  /* Map appointments by day */
   const aptsByDay = useMemo(() => {
     const map: Record<string, Appointment[]> = {}
     for (const apt of appointments ?? []) {
       try {
         const key = format(parseISO(apt.datetime), 'yyyy-MM-dd')
         map[key] = [...(map[key] ?? []), apt]
-      } catch { /* skip */ }
+      } catch { /* data inválida: ignora */ }
     }
+    for (const list of Object.values(map)) list.sort((a, b) => a.datetime.localeCompare(b.datetime))
     return map
   }, [appointments])
+
+  const pending = useMemo(
+    () => (appointments ?? [])
+      .filter(needsAction)
+      .sort((a, b) => a.datetime.localeCompare(b.datetime)),
+    [appointments],
+  )
 
   async function act(id: number, action: 'confirm' | 'reject') {
     setBusy(id)
@@ -245,271 +283,326 @@ export function Appointments() {
       if (action === 'confirm') await api.confirmAppointment(id)
       else await api.rejectAppointment(id)
       refetch()
-      setSelected(prev => prev?.id === id ? { ...prev, status: action === 'confirm' ? 'confirmed' : 'rejected' } : prev)
+      setSelected((prev) => (prev?.id === id ? { ...prev, status: action === 'confirm' ? 'confirmed' : 'rejected' } : prev))
     } finally {
       setBusy(null)
     }
   }
 
   return (
-    <div className="space-y-5 animate-fade-in pb-8">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-gray-900">Agendamentos</h1>
-        <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5">
-          <IconPlus className="w-4 h-4" />
-          Novo Agendamento
-        </button>
-      </div>
-
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        {/* Month nav */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setCurrentMonth(m => subMonths(m, 1))}
-            className="btn-ghost py-1.5 px-2"
-          >
-            <IconChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setCurrentMonth(new Date())}
-            className="btn-secondary py-1.5 px-3 text-xs"
-          >
-            Hoje
-          </button>
-          <button
-            onClick={() => setCurrentMonth(m => addMonths(m, 1))}
-            className="btn-ghost py-1.5 px-2"
-          >
-            <IconChevronRight className="w-4 h-4" />
-          </button>
-          <span className="text-base font-semibold text-gray-800 capitalize ml-1">
-            {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
-          </span>
-        </div>
-
-        {/* View tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-          {(['day','week','month'] as View[]).map(v => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                view === v ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {v === 'day' ? 'Dia' : v === 'week' ? 'Semana' : 'Mês'}
+    <Page>
+      <PageHeader
+        title="Agenda"
+        subtitle={
+          appointments
+            ? `${appointments.length} consulta${appointments.length !== 1 ? 's' : ''} registrada${appointments.length !== 1 ? 's' : ''}`
+            : 'Carregando…'
+        }
+        actions={
+          <>
+            <RefreshBar refetch={refetch} lastUpdated={lastUpdated} loading={loading} />
+            <button onClick={() => setShowCreate(true)} className="btn-primary">
+              <IconPlus className="w-4 h-4" /> Marcar consulta
             </button>
-          ))}
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      <div className="flex gap-4">
-        {/* Calendar */}
-        <div className={`card p-0 overflow-hidden flex-1 transition-all duration-300 ${selected ? 'rounded-r-none' : ''}`}>
-          {/* Weekday headers */}
-          <div className="grid grid-cols-7 border-b border-gray-100">
-            {WEEKDAYS.map(d => (
-              <div key={d} className="text-center text-[11px] font-semibold text-gray-400 uppercase tracking-wider py-3">
+      {/* Pendências primeiro: é o que trava a agenda. */}
+      <AnimatePresence>
+        {pending.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={springy}
+            className="mb-5 overflow-hidden"
+          >
+            <div className="card-flush">
+              <div className="flex items-center gap-2.5 px-5 py-3 bg-brass/8 border-b border-line">
+                <span className="w-2 h-2 rounded-full bg-brass shrink-0" />
+                <p className="text-[13px] font-semibold text-ink">
+                  {pending.length} consulta{pending.length !== 1 ? 's' : ''} esperando decisão do escritório
+                </p>
+              </div>
+              <div className="p-3 space-y-2">
+                {pending.map((a, i) => (
+                  <motion.div
+                    key={a.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.05 + i * 0.05, duration: 0.28 }}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-line hover:border-brass/35 transition-colors"
+                  >
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
+                      style={{ background: hueFor(a.phone) }}
+                    >
+                      {initials(a.nome, a.phone)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-ink truncate">
+                        {a.nome || shortPhone(a.phone)}
+                        <span className="text-slate-400 font-normal"> · {ACTION_LABEL[a.status]}</span>
+                      </p>
+                      <p className="text-xs text-slate-400 truncate">
+                        {format(parseISO(a.new_slot_start ?? a.datetime), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}
+                        {a.procedure && ` · ${shortArea(a.procedure)}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => act(a.id, 'confirm')}
+                        disabled={busy === a.id}
+                        className="btn-primary !py-1.5 !px-3 text-xs"
+                      >
+                        <IconCheck className="w-3.5 h-3.5" /> Confirmar
+                      </button>
+                      <button
+                        onClick={() => setSelected(a)}
+                        className="btn-ghost !py-1.5 !px-2.5 text-xs"
+                      >
+                        Ver
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Navegação do mês */}
+      <Reveal className="flex items-center gap-2 mb-4">
+        <button onClick={() => setCurrentMonth((m) => subMonths(m, 1))} className="btn-ghost !py-1.5 !px-2">
+          <IconChevronLeft className="w-4 h-4" />
+        </button>
+        <button onClick={() => setCurrentMonth(new Date())} className="btn-secondary !py-1.5 !px-3 text-xs">
+          Hoje
+        </button>
+        <button onClick={() => setCurrentMonth((m) => addMonths(m, 1))} className="btn-ghost !py-1.5 !px-2">
+          <IconChevronRight className="w-4 h-4" />
+        </button>
+        <AnimatePresence mode="wait">
+          <motion.span
+            key={format(currentMonth, 'yyyy-MM')}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={quick}
+            className="font-display text-base font-semibold text-ink capitalize ml-1"
+          >
+            {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
+          </motion.span>
+        </AnimatePresence>
+      </Reveal>
+
+      <div className="flex gap-4 items-start">
+        <Reveal className={`card-flush flex-1 min-w-0 ${selected ? 'rounded-r-none' : ''}`}>
+          <div className="grid grid-cols-7 border-b border-line bg-surface-2">
+            {WEEKDAYS.map((d) => (
+              <div key={d} className="text-center text-[11px] font-semibold text-slate-400 uppercase tracking-wider py-2.5">
                 {d}
               </div>
             ))}
           </div>
 
-          {/* Day grid */}
-          <div className="grid grid-cols-7">
-            {days.map((day) => {
-              const key     = format(day, 'yyyy-MM-dd')
-              const dayApts = aptsByDay[key] ?? []
-              const outside = !isSameMonth(day, currentMonth)
-              const today   = isToday(day)
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={format(currentMonth, 'yyyy-MM')}
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.22, ease: [0.22, 0.61, 0.36, 1] }}
+              className="grid grid-cols-7"
+            >
+              {days.map((day, i) => {
+                const key     = format(day, 'yyyy-MM-dd')
+                const dayApts = aptsByDay[key] ?? []
+                const outside = !isSameMonth(day, currentMonth)
+                const today   = isToday(day)
 
-              return (
-                <div
-                  key={key}
-                  className={`cal-day ${outside ? 'cal-day-outside' : ''} ${today ? 'cal-day-today' : ''}`}
-                >
-                  <div className="flex justify-end mb-1">
-                    <span
-                      className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full ${
-                        today
-                          ? 'bg-primary text-white'
-                          : outside
-                          ? 'text-gray-300'
-                          : 'text-gray-600'
-                      }`}
-                    >
-                      {format(day, 'd')}
-                    </span>
-                  </div>
-                  {dayApts.slice(0, 3).map(apt => (
-                    <div
-                      key={apt.id}
-                      onClick={() => setSelected(apt)}
-                      className={`cal-event ${STATUS_EVENT_CLASS[apt.status]} ${
-                        selected?.id === apt.id ? 'ring-2 ring-primary ring-offset-1' : ''
-                      }`}
-                    >
-                      {format(parseISO(apt.datetime), 'HH:mm')} {apt.nome ?? apt.phone}
+                return (
+                  <motion.div
+                    key={key}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: Math.min(i * 0.006, 0.2), duration: 0.2 }}
+                    className={`cal-day ${outside ? 'cal-day-outside' : ''} ${today ? 'cal-day-today' : ''}`}
+                  >
+                    <div className="flex justify-end mb-1">
+                      <span
+                        className={`text-[11px] font-medium w-6 h-6 flex items-center justify-center rounded-full tabular-nums ${
+                          today ? 'bg-ink text-white' : outside ? 'text-slate-300' : 'text-slate-600'
+                        }`}
+                      >
+                        {format(day, 'd')}
+                      </span>
                     </div>
-                  ))}
-                  {dayApts.length > 3 && (
-                    <p className="text-[10px] text-gray-400 px-1.5">+{dayApts.length - 3} mais</p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+                    {dayApts.slice(0, 3).map((apt) => (
+                      <motion.div
+                        key={apt.id}
+                        whileHover={{ x: 2 }}
+                        transition={quick}
+                        onClick={() => setSelected(apt)}
+                        className={`cal-event ${STATUS_EVENT_CLASS[apt.status]} ${
+                          selected?.id === apt.id ? 'ring-2 ring-primary ring-offset-1' : ''
+                        }`}
+                      >
+                        {format(parseISO(apt.datetime), 'HH:mm')} {apt.nome || shortPhone(apt.phone)}
+                      </motion.div>
+                    ))}
+                    {dayApts.length > 3 && (
+                      <p className="text-[10px] text-slate-400 px-1.5">+{dayApts.length - 3} mais</p>
+                    )}
+                  </motion.div>
+                )
+              })}
+            </motion.div>
+          </AnimatePresence>
 
-        {/* Detail panel */}
-        {selected && (
-          <div className="card animate-slide-right w-72 shrink-0 rounded-l-none border-l-0 -ml-px flex flex-col gap-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Agendamento</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <StatusBadge status={selected.status} />
+          {appointments?.length === 0 && (
+            <EmptyState
+              icon={<IconCalendar className="w-11 h-11" />}
+              title="Nenhuma consulta na agenda"
+              hint="As consultas marcadas pelo agente no WhatsApp caem aqui para o escritório confirmar."
+            />
+          )}
+        </Reveal>
+
+        {/* Painel de detalhe */}
+        <AnimatePresence>
+          {selected && (
+            <motion.div
+              initial={{ opacity: 0, x: 24, width: 0 }}
+              animate={{ opacity: 1, x: 0, width: 288 }}
+              exit={{ opacity: 0, x: 24, width: 0 }}
+              transition={springy}
+              className="card shrink-0 rounded-l-none border-l-0 flex flex-col gap-4 overflow-hidden"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-display text-[15px] font-semibold text-ink">Consulta</h3>
                 <button
                   onClick={() => setSelected(null)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors ml-1"
+                  className="text-slate-400 hover:text-ink transition-colors"
                 >
                   <IconClose className="w-4 h-4" />
                 </button>
               </div>
-            </div>
 
-            <div className="space-y-3 text-sm">
-              <div className="flex gap-2">
-                <span className="text-gray-400 w-4 mt-0.5 shrink-0">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                  </svg>
-                </span>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Cliente</p>
-                  <p className="font-medium text-gray-900">{selected.nome ?? selected.phone}</p>
-                </div>
-              </div>
+              <StatusBadge status={selected.status} dot />
 
-              <div className="flex gap-2">
-                <span className="text-gray-400 mt-0.5 shrink-0"><IconPhone /></span>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Telefone</p>
-                  <p className="text-gray-700">{selected.phone}</p>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <span className="text-gray-400 mt-0.5 shrink-0">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                  </svg>
-                </span>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Data e Horário</p>
-                  <p className="text-gray-700">
-                    {format(parseISO(selected.datetime), "dd/MM/yyyy · HH:mm", { locale: ptBR })}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <span className="text-gray-400 mt-0.5 shrink-0"><IconClock /></span>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Procedimento</p>
-                  <p className="text-gray-700">{selected.procedure}</p>
-                </div>
+              <div className="space-y-3">
+                <DetailField icon={<IconUsers className="w-4 h-4" />} label="Cliente">
+                  {selected.nome || shortPhone(selected.phone)}
+                </DetailField>
+                <DetailField icon={<IconPhone className="w-4 h-4" />} label="Telefone">
+                  <span className="tabular-nums">{shortPhone(selected.phone)}</span>
+                </DetailField>
+                <DetailField icon={<IconCalendar className="w-4 h-4" />} label="Data e horário">
+                  {format(parseISO(selected.datetime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                </DetailField>
+                <DetailField icon={<IconClock className="w-4 h-4" />} label="Tipo">
+                  {selected.procedure || 'Consulta'}
+                </DetailField>
               </div>
 
               {selected.notes && (
-                <div className="bg-amber-50 rounded-xl px-3 py-2.5">
-                  <p className="text-[10px] uppercase tracking-wider text-amber-700 font-semibold mb-1">Observações</p>
-                  <p className="text-xs text-amber-800">{selected.notes}</p>
+                <div className="bg-surface-2 border border-line rounded-xl px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">Observações</p>
+                  <p className="text-xs text-slate-600 whitespace-pre-wrap">{selected.notes}</p>
                 </div>
               )}
-            </div>
 
-            {/* New slot info for reschedule */}
-            {selected.status === 'reschedule_requested' && selected.new_slot_start && (
-              <div className="bg-blue-50 rounded-xl px-3 py-2.5 text-xs">
-                <p className="text-[10px] uppercase tracking-wider text-blue-700 font-semibold mb-1">Novo horário solicitado</p>
-                <p className="text-blue-800 font-medium">
-                  {format(parseISO(selected.new_slot_start), "dd/MM/yyyy · HH:mm", { locale: ptBR })}
-                </p>
-              </div>
-            )}
+              {selected.status === 'reschedule_requested' && selected.new_slot_start && (
+                <div className="bg-brass/8 border border-brass/25 rounded-xl px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wider text-brass font-semibold mb-1">Novo horário pedido</p>
+                  <p className="text-[13px] text-ink font-medium">
+                    {format(parseISO(selected.new_slot_start), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                </div>
+              )}
 
-            {/* Actions */}
-            {selected.status === 'pending' && (
-              <div className="border-t border-gray-50 pt-3 space-y-2 mt-auto">
-                <button
-                  onClick={() => act(selected.id, 'confirm')}
-                  disabled={busy === selected.id}
-                  className="w-full btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
-                >
-                  ✓ Confirmar agendamento
-                </button>
-                <button
-                  onClick={() => act(selected.id, 'reject')}
-                  disabled={busy === selected.id}
-                  className="w-full btn-ghost py-2 text-xs text-red-500 hover:bg-red-50"
-                >
-                  ✕ Rejeitar
-                </button>
-              </div>
-            )}
+              <a
+                href={`https://wa.me/${shortPhone(selected.phone).replace(/\D/g, '')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-secondary w-full !py-2 text-xs"
+              >
+                <IconWhatsApp className="w-3.5 h-3.5" /> Falar no WhatsApp
+              </a>
 
-            {selected.status === 'reschedule_requested' && (
-              <div className="border-t border-gray-50 pt-3 space-y-2 mt-auto">
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Remarcação solicitada pela cliente</p>
-                <button
-                  onClick={() => act(selected.id, 'confirm')}
-                  disabled={busy === selected.id}
-                  className="w-full btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
-                >
-                  ✓ Confirmar remarcação
-                </button>
-                <button
-                  onClick={() => act(selected.id, 'reject')}
-                  disabled={busy === selected.id}
-                  className="w-full btn-ghost py-2 text-xs text-red-500 hover:bg-red-50"
-                >
-                  ✕ Rejeitar remarcação
-                </button>
-              </div>
-            )}
+              {selected.status === 'pending' && (
+                <div className="border-t border-line pt-3 space-y-2 mt-auto">
+                  <button
+                    onClick={() => act(selected.id, 'confirm')}
+                    disabled={busy === selected.id}
+                    className="btn-primary w-full !py-2 text-xs"
+                  >
+                    <IconCheck className="w-3.5 h-3.5" /> Confirmar consulta
+                  </button>
+                  <button
+                    onClick={() => act(selected.id, 'reject')}
+                    disabled={busy === selected.id}
+                    className="btn-ghost w-full !py-2 text-xs !text-red-600 hover:!bg-red-50"
+                  >
+                    Recusar este horário
+                  </button>
+                </div>
+              )}
 
-            {selected.status === 'cancel_requested' && (
-              <div className="border-t border-gray-50 pt-3 space-y-2 mt-auto">
-                <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Cancelamento solicitado pela cliente</p>
-                <button
-                  onClick={() => act(selected.id, 'confirm')}
-                  disabled={busy === selected.id}
-                  className="w-full bg-red-500 hover:bg-red-600 text-white rounded-xl py-2 text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-                >
-                  ✓ Confirmar cancelamento
-                </button>
-                <button
-                  onClick={() => act(selected.id, 'reject')}
-                  disabled={busy === selected.id}
-                  className="w-full btn-ghost py-2 text-xs text-gray-500 hover:bg-gray-50"
-                >
-                  ✕ Manter agendamento
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+              {selected.status === 'reschedule_requested' && (
+                <div className="border-t border-line pt-3 space-y-2 mt-auto">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                    Remarcação pedida pelo cliente
+                  </p>
+                  <button
+                    onClick={() => act(selected.id, 'confirm')}
+                    disabled={busy === selected.id}
+                    className="btn-primary w-full !py-2 text-xs"
+                  >
+                    <IconCheck className="w-3.5 h-3.5" /> Aceitar novo horário
+                  </button>
+                  <button
+                    onClick={() => act(selected.id, 'reject')}
+                    disabled={busy === selected.id}
+                    className="btn-ghost w-full !py-2 text-xs !text-red-600 hover:!bg-red-50"
+                  >
+                    Recusar remarcação
+                  </button>
+                </div>
+              )}
+
+              {selected.status === 'cancel_requested' && (
+                <div className="border-t border-line pt-3 space-y-2 mt-auto">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                    Cancelamento pedido pelo cliente
+                  </p>
+                  <button
+                    onClick={() => act(selected.id, 'confirm')}
+                    disabled={busy === selected.id}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-2 text-xs font-medium transition-colors"
+                  >
+                    Confirmar cancelamento
+                  </button>
+                  <button
+                    onClick={() => act(selected.id, 'reject')}
+                    disabled={busy === selected.id}
+                    className="btn-ghost w-full !py-2 text-xs"
+                  >
+                    Manter a consulta
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {showCreate && (
-        <NewAppointmentModal
-          onSave={handleCreate}
-          onClose={() => setShowCreate(false)}
-        />
-      )}
-    </div>
+      <AnimatePresence>
+        {showCreate && <NewAppointmentModal onSave={handleCreate} onClose={() => setShowCreate(false)} />}
+      </AnimatePresence>
+    </Page>
   )
 }

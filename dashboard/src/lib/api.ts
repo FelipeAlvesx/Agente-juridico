@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_URL ?? ''
+// `?.` para o módulo continuar importável fora do Vite (ver api.test.ts).
+const BASE = import.meta.env?.VITE_API_URL ?? ''
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -51,6 +52,28 @@ export interface Lead {
   origem?: string | null
 }
 
+/** Dias sem contato a partir dos quais um lead aberto entra na fila de retomada. */
+export const STALE_DAYS = 3
+
+export type FollowUpBucket = 'quente' | 'esfriando' | 'frio' | 'sem_resposta'
+
+/**
+ * Regra única de "precisa de follow-up". Mora aqui porque a Sidebar (contador)
+ * e a tela de Follow-up (fila) precisam concordar — duas cópias divergem.
+ * Retorna null para quem não está na fila.
+ */
+export function followUpBucket(lead: Lead): FollowUpBucket | null {
+  if (lead.status === 'cliente') return null
+  // Perdido por silêncio ainda merece uma última tentativa; perdido com motivo real, não.
+  if (lead.status === 'perdido') return lead.motivo_perda === 'sem_resposta' ? 'sem_resposta' : null
+  if (!lead.last_contact) return null
+  const days = Math.floor((Date.now() - Date.parse(lead.last_contact)) / 86_400_000)
+  if (Number.isNaN(days) || days < STALE_DAYS) return null
+  if (days <= 7) return 'quente'
+  if (days <= 20) return 'esfriando'
+  return 'frio'
+}
+
 export interface Appointment {
   id: number
   phone: string
@@ -64,6 +87,16 @@ export interface Appointment {
   notes: string | null
   created_at: string
 }
+
+/**
+ * Consultas que travam esperando uma decisão do escritório. Mesma razão do
+ * followUpBucket: o contador da Sidebar e a lista da Agenda têm que bater.
+ */
+export const APPOINTMENT_NEEDS_ACTION: Appointment['status'][] = [
+  'pending', 'reschedule_requested', 'cancel_requested',
+]
+
+export const needsAction = (a: Appointment) => APPOINTMENT_NEEDS_ACTION.includes(a.status)
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -101,16 +134,21 @@ export interface Professional {
   active: boolean
 }
 
+/** Espelha ESCALATION_CATEGORIES em verticals/advocacia/tools.py. */
+export type EscalationCategory =
+  | 'urgencia_prazo' | 'consulta_juridica' | 'processo_em_andamento'
+  | 'reclamacao' | 'pedido_humano' | 'confusao_repetida'
+
 export interface Escalation {
   id: number
   phone: string
   nome: string | null
   reason: string
-  category: 'medica' | 'reclamacao' | 'pedido_humano' | 'confusao_repetida' | 'fora_escopo'
+  category: EscalationCategory
   created_at: string
 }
 
-export interface ClinicConfig {
+export interface FirmConfig {
   name: string
   segment: string
   address: string
@@ -235,9 +273,9 @@ export const api = {
 
   // Config
   getConfig: () =>
-    request<ClinicConfig>('/api/config'),
+    request<FirmConfig>('/api/config'),
 
-  updateConfig: (data: Partial<ClinicConfig>) =>
+  updateConfig: (data: Partial<FirmConfig>) =>
     request<{ ok: boolean }>('/api/config', {
       method: 'PUT',
       body: JSON.stringify(data),
