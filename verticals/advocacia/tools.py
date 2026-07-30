@@ -12,7 +12,7 @@ from sessions import (
     create_appointment, update_appointment,
     save_offered_slots, clear_offered_slots,
 )
-from verticals.estetica.notifications import (
+from verticals.advocacia.notifications import (
     notify_lead_qualified, notify_appointment_pending,
     notify_reschedule_pending, notify_cancel_pending,
 )

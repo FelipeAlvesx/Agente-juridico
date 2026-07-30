@@ -8,7 +8,7 @@ import gcal
 from sessions import get_appointment, update_appointment
 from evolution import send_message
 from config import get_config
-from verticals.estetica.tools import slot_label
+from verticals.advocacia.tools import slot_label
 
 log = structlog.get_logger()
 

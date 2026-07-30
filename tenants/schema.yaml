@@ -4,7 +4,7 @@
 
 required:
   - tenant_id                              # slug único, ex: lumina
-  - vertical                               # enum: estetica | clinic | generic
+  - vertical                               # enum: advocacia | clinic | generic
   - business.name                          # nome da empresa
   - business.timezone                      # ex: America/Sao_Paulo
   - business.hours                         # texto livre, ex: "seg-sab 09h-19h"

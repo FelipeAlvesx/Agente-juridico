@@ -20,7 +20,7 @@ from gcal import confirm_event, confirm_event_with_new_slot, delete_event
 from evolution import send_message
 from config import get_config
 import config as _config_module
-from verticals.estetica.tools import slot_label
+from verticals.advocacia.tools import slot_label
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
