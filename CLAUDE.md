@@ -66,6 +66,30 @@ abra um pedido para o dono via `maestri ask`.
 schema + as funções de acesso; o Agente só as consome. Mudança de assinatura em
 `sessions.py` tem que ser avisada ao terminal do Agente antes de aplicar.
 
+## Comunicação entre terminais — prompts curtos
+
+Todo `maestri ask` / `maestri check` entre terminais é token pago. Delegação aqui é
+telegrama, não briefing. Vale nas duas direções: ao delegar e ao responder.
+
+- **Alvo: 1 a 3 linhas.** Passou de 5, corte.
+- **Aponte, não transcreva.** Cite `arquivo:linha` e deixe o outro ler. Nunca cole
+  trecho de código, log ou conteúdo de arquivo que ele consegue abrir sozinho.
+- **Não repita o que já está aqui.** O `CLAUDE.md` e a role já foram lidos pelo
+  destinatário — não reexplique arquitetura, stack, ownership ou regras da OAB.
+- **Uma tarefa por mensagem**, com o resultado esperado explícito.
+- **Sem preâmbulo, sem cortesia, sem recapitulação** do que já foi combinado.
+- **Ao responder:** o que mudou, em que arquivo, o que quebrou. Nada de relatório.
+
+```
+✓ "Âmbar: sessions.py precisa de lead.status + motivo_perda. Enum em CLAUDE.md. Me avisa a assinatura final."
+✗ "Oi Âmbar! Então, conforme conversamos, o projeto é um agente de WhatsApp para
+   advocacia e você é responsável pelo CRM. Eu estava analisando o sessions.py e
+   percebi que hoje ele só guarda... [30 linhas]"
+```
+
+Concisão nunca justifica ambiguidade: se cortar deixa a tarefa dúbia, mantenha a
+linha que remove a dúvida — o retrabalho custa mais tokens que ela.
+
 ## Arquivos-chave
 
 | Arquivo | Papel |
