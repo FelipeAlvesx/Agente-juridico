@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+
+  # ─── Evolution API v1 (WhatsApp) ──────────────────────────────────
+  # Build customizado: patch @lid baked na imagem (sem restart pós-start).
+  evolution:
+    build:
+      context: ./evolution
+      dockerfile: Dockerfile
+    container_name: juris_evolution
+    restart: always
+    environment:
+      - SERVER_URL=http://localhost:8080
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - DATABASE_ENABLED=false
+      - LOG_LEVEL=ERROR
+      - DEL_INSTANCE=false
+    volumes:
+      - evolution_data:/evolution/instances
+    networks:
+      - juris_net
+
+  # ─── Agente Python ────────────────────────────────────────────────
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: juris_agent
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - EVOLUTION_URL=http://evolution:8080
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+      - GOOGLE_CREDENTIALS_PATH=${GOOGLE_CREDENTIALS_PATH:-/app/credentials/google_credentials.json}
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-}
+      - DEMO_CALENDAR=${DEMO_CALENDAR:-true}
+      - DEMO_SEED=${DEMO_SEED:-true}
+      - TENANT_CONFIG=/app/tenants/juris.yaml
+      - LUMINA_ROOT=/app
+    volumes:
+      - ./tenants:/app/tenants:ro
+      - ./prompts:/app/prompts:ro
+      - ./verticals:/app/verticals:ro
+      - ./knowledge:/app/knowledge:ro
+      - ./credentials:/app/credentials:ro
+      - agent_db:/app/data
+    depends_on:
+      - evolution
+    networks:
+      - juris_net
+
+  # ─── Dashboard React (build + Nginx) ──────────────────────────────
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: juris_dashboard
+    restart: always
+    ports:
+      - "5173:80"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    depends_on:
+      - agent
+    networks:
+      - juris_net
+
+  # ─── Backup diário SQLite ─────────────────────────────────────────
+  backup:
+    image: alpine:3.19
+    container_name: juris_backup
+    restart: unless-stopped
+    volumes:
+      - agent_db:/data:ro
+      - agent_db_backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache sqlite > /dev/null 2>&1
+        echo '0 2 * * * sqlite3 /data/sessions.db ".backup /backups/sessions_$(date +\%Y\%m\%d_\%H\%M\%S).db" && ls -1t /backups/sessions_*.db | tail -n +8 | xargs -r rm --' > /etc/crontabs/root
+        crond -f -l 8
+    networks:
+      - juris_net
+
+volumes:
+  evolution_data:
+  agent_db:
+  agent_db_backups:
+
+networks:
+  juris_net:
+    driver: bridge

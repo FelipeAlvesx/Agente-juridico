@@ -1,0 +1,37 @@
+# Ambiente
+.env
+*.env.local
+
+# Credenciais — NUNCA commitar
+credentials/*.json
+credentials/*.p12
+credentials/*.pem
+qrcode.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node / React
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.env
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+
+# Backups
+backups/
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+_ref/

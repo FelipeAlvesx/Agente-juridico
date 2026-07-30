@@ -1,0 +1,27 @@
+# Schema de validação para arquivos tenants/*.yaml
+# Campos obrigatórios: o loader falha com erro descritivo se ausentes.
+# Campos opcionais: têm defaults sensatos ou degradam graciosamente.
+
+required:
+  - tenant_id                              # slug único, ex: lumina
+  - vertical                               # enum: estetica | clinic | generic
+  - business.name                          # nome da empresa
+  - business.timezone                      # ex: America/Sao_Paulo
+  - business.hours                         # texto livre, ex: "seg-sab 09h-19h"
+  - agent.name                             # nome do assistente virtual
+  - integrations.evolution.instance        # nome da instância Evolution API
+  - integrations.human_phone               # número da recepcionista (escalada)
+
+optional:
+  - business.address
+  - business.phone
+  - business.segment                       # ex: "Clínica de estética avançada"
+  - integrations.google_calendar.calendar_id
+  - integrations.google_calendar.slot_duration_minutes   # default: 60
+  - agent.role                             # default: "assistente"
+  - agent.persona_notes                    # regras extras de tom/comportamento
+  - vertical_config.lead_fields            # default: [nome, procedimento_interesse, indicacao]
+  - vertical_config.procedures             # lista de procedimentos oferecidos
+  - vertical_config.payment_methods        # formas de pagamento aceitas
+  - knowledge.extra_faq                    # lista de {q, a}
+  - agent_rules_extra                      # regras extras do cliente (string livre)
