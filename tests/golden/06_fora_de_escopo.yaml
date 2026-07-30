@@ -1,0 +1,15 @@
+name: Fora de escopo — área não atendida sai do funil, sem indicar terceiros
+
+messages:
+  - role: user
+    text: "boa tarde, sou o Jorge. recebi um auto de infração do IBAMA na minha fazenda por desmatamento, é questão ambiental"
+  - role: agent
+    expect_tool_calls: [marcar_fora_de_escopo]
+    expect_text_absent:
+      - "vou agendar"
+      - "horário"
+      - "indico"
+      - "recomendo o"
+      - "procure um"
+      - "procure outro"
+      - "R$"

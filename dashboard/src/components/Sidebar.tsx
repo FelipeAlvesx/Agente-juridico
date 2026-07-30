@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   IconDashboard, IconUsers, IconSparkles,
-  IconCalendar, IconBriefcase, IconSettings, IconChat, IconBarChart2,
+  IconCalendar, IconBriefcase, IconSettings, IconChat, IconBarChart2, IconTrendUp,
 } from './Icon'
 
 type NavItem = {
@@ -13,7 +13,8 @@ type NavItem = {
 
 const MENU_ITEMS: NavItem[] = [
   { to: '/',              label: 'Dashboard',    icon: <IconDashboard />, end: true },
-  { to: '/pacientes',     label: 'Pacientes',    icon: <IconUsers /> },
+  { to: '/pacientes',     label: 'Clientes',     icon: <IconUsers /> },
+  { to: '/pipeline',      label: 'Pipeline',     icon: <IconTrendUp /> },
   { to: '/servicos',      label: 'Serviços',     icon: <IconSparkles /> },
   { to: '/agendamentos',  label: 'Agendamentos', icon: <IconCalendar /> },
   { to: '/profissionais', label: 'Profissionais', icon: <IconBriefcase /> },

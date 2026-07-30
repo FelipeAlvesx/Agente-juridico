@@ -1,0 +1,40 @@
+name: Agendamento — consulta fica pendente, nunca confirmada
+
+messages:
+  - role: user
+    text: "boa tarde, meu nome é Cláudia. meu plano de saúde negou uma cirurgia que o médico pediu"
+  - role: agent
+    expect_tool_calls: [save_lead_field]
+
+  - role: user
+    text: "negaram por escrito semana passada. vim por indicação de uma amiga. queria falar com um advogado"
+  - role: agent
+    expect_tool_calls: [save_lead_field]
+    expect_text_absent:
+      - "R$"
+      - "%"
+      - "você vai ganhar"
+      - "é abusivo"
+      - "é ilegal"
+
+  - role: user
+    text: "pode ser semana que vem de tarde, online"
+  - role: agent
+    # Período + formato informados: consulta a agenda na mesma vez, sem re-perguntar.
+    expect_tool_calls: [list_available_slots]
+    expect_text_absent:
+      - "manhã ou tarde"
+      - "presencial ou online"
+
+  - role: user
+    text: "a primeira opção tá ótima"
+  - role: agent
+    # Escolha explícita: cria na hora, sem re-listar e sem "posso confirmar?".
+    expect_tool_calls: [create_pending_appointment]
+    expect_text_contains:
+      - "confirma"
+    expect_text_absent:
+      - "está confirmada"
+      - "tá confirmada"
+      - "consulta confirmada"
+      - "posso confirmar"

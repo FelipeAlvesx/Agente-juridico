@@ -108,6 +108,13 @@ def _get_vertical():
     return _vertical_module
 
 
+def _escalation_message(category: str) -> str:
+    """Texto da transferência — a vertical define por categoria (ex.: 190/180 em urgência)."""
+    v = _get_vertical()
+    default = getattr(v, "ESCALATION_MESSAGE_DEFAULT", "Um momento! Vou te transferir para nossa equipe 🙏")
+    return getattr(v, "ESCALATION_MESSAGES", {}).get(category, default)
+
+
 def _get_tools() -> list:
     global _tools_cache
     if _tools_cache is None:
@@ -118,15 +125,15 @@ def _get_tools() -> list:
 # ── Context builders ──────────────────────────────────────────────────────────
 
 def _temporal_context() -> str:
-    now     = datetime.now(get_config().tz)
+    cfg     = get_config()
+    now     = datetime.now(cfg.tz)
     weekday = _WEEKDAYS_PT[now.weekday()]
-    # Lumina: seg-sab 9h-19h
-    is_open = now.weekday() <= 5 and 9 <= now.hour < 19
+    is_open = now.weekday() in cfg.workdays and cfg.hours_start <= now.hour < cfg.hours_end
     status  = "DENTRO" if is_open else "FORA"
     return (
         f"\n\n[CONTEXTO TEMPORAL]\n"
-        f"Agora é {weekday}, {now.strftime('%d/%m/%Y às %H:%M')} (horário de São Paulo).\n"
-        f"Estamos {status} do horário de atendimento (seg-sáb, 9h-19h)."
+        f"Agora é {weekday}, {now.strftime('%d/%m/%Y às %H:%M')}.\n"
+        f"Estamos {status} do horário de atendimento ({cfg.hours})."
     )
 
 
@@ -359,7 +366,7 @@ def process_message(phone: str, text: str) -> None:
         time.sleep(RESPONSE_DELAY)
 
         rag_context = search(text)
-        rag_block   = f"\n\n[INFORMAÇÕES DA CLÍNICA RELEVANTES]\n{rag_context}" if rag_context else ""
+        rag_block   = f"\n\n[INFORMAÇÕES DO ESCRITÓRIO RELEVANTES]\n{rag_context}" if rag_context else ""
         lead_block  = _build_lead_context(phone)
         apt_block   = _build_appointments_context(phone)
         slot_block  = _build_offered_slots_context(phone)
@@ -375,7 +382,7 @@ def process_message(phone: str, text: str) -> None:
         if escalated:
             save_turn(phone, text, "[ESCALADO PARA HUMANO]")
             log_escalation(phone, reason=text[:200], category=esc_category)
-            send_message(phone, "Um momento! Vou te transferir para nossa equipe agora 🙏")
+            _split_and_send(phone, _escalation_message(esc_category))
             notify_human(phone, text)
             mark_escalated(phone)
             log.info("message_escalated", phone_hash=phone_hash, category=esc_category)
@@ -406,7 +413,7 @@ def run_test_message(phone: str, text: str, history: list) -> dict:
     Retorna {reply, tool_calls} para o runner de golden tests.
     """
     rag_context = search(text)
-    rag_block   = f"\n\n[INFORMAÇÕES DA CLÍNICA RELEVANTES]\n{rag_context}" if rag_context else ""
+    rag_block   = f"\n\n[INFORMAÇÕES DO ESCRITÓRIO RELEVANTES]\n{rag_context}" if rag_context else ""
     lead_block  = _build_lead_context(phone)
     apt_block   = _build_appointments_context(phone)
     slot_block  = _build_offered_slots_context(phone)
@@ -423,7 +430,7 @@ def run_test_message(phone: str, text: str, history: list) -> dict:
         save_turn(phone, text, "[ESCALADO PARA HUMANO]")
         log_escalation(phone, reason=text[:200], category=esc_category)
         mark_escalated(phone)
-        reply = "Um momento! Vou te transferir para nossa equipe agora 🙏"
+        reply = _escalation_message(esc_category)
     elif reply:
         save_turn(phone, text, reply)
 

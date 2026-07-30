@@ -1,6 +1,9 @@
 """
-Google Calendar backend para agendamento de procedimentos estéticos.
+Google Calendar backend para agendamento de consultas.
 Usa Service Account — sem OAuth interativo.
+
+Horário de funcionamento e dias úteis vêm do tenant
+(business.hours_start / hours_end / workdays).
 """
 
 import os
@@ -11,10 +14,6 @@ import structlog
 from config import get_config
 
 log = structlog.get_logger()
-
-# Lumina funciona de segunda a sábado, das 9h às 19h
-BUSINESS_START = 9
-BUSINESS_END   = 19
 
 _WEEKDAYS_PT = [
     "segunda-feira", "terça-feira", "quarta-feira",
@@ -61,21 +60,23 @@ def _parse_date_range(date_range: str) -> tuple[date, date]:
     return start, start + timedelta(days=6)
 
 
-def _period_hours(period: str | None) -> tuple[int, int]:
-    """Converte preferência de período em (hora_início, hora_fim)."""
+def _period_hours(period: str | None, cfg) -> tuple[int, int]:
+    """Converte preferência de período em (hora_início, hora_fim), dentro do horário do tenant."""
+    day = (cfg.hours_start, cfg.hours_end)
     if not period:
-        return BUSINESS_START, BUSINESS_END
+        return day
     p = period.lower()
     if any(x in p for x in ("manha", "manhã", "morning")):
-        return 9, 12
+        return cfg.hours_start, min(12, cfg.hours_end)
     if any(x in p for x in ("tarde", "afternoon")):
-        return 13, 19
-    return BUSINESS_START, BUSINESS_END
+        return max(13, cfg.hours_start), cfg.hours_end
+    return day
 
 
 def _mock_slots(start_date: date, end_date: date, duration: int,
-                day_start_h: int, day_end_h: int, tz) -> dict:
+                day_start_h: int, day_end_h: int, cfg) -> dict:
     """Gera slots simulados plausíveis quando o calendário não está configurado (modo demo)."""
+    tz  = cfg.tz
     now = datetime.now(tz)
     tomorrow = (now + timedelta(days=1)).date()
     current = max(start_date, tomorrow)
@@ -89,7 +90,7 @@ def _mock_slots(start_date: date, end_date: date, duration: int,
     available = []
     hour_idx = 0
     while current <= end_date and len(available) < 3:
-        if current.weekday() > 5:  # Pula domingo
+        if current.weekday() not in cfg.workdays:
             current += timedelta(days=1)
             continue
         h = candidate_hours[hour_idx % len(candidate_hours)]
@@ -123,7 +124,7 @@ def list_available_slots(
     tz             = cfg.tz
     slot_duration  = _resolve_duration(procedure_type, cfg)
     buffer         = cfg.slot_buffer
-    day_start_h, day_end_h = _period_hours(period)
+    day_start_h, day_end_h = _period_hours(period, cfg)
 
     try:
         start_date, end_date = _parse_date_range(date_range)
@@ -134,7 +135,7 @@ def list_available_slots(
     demo_mode = os.getenv("DEMO_CALENDAR", "").lower() in ("true", "1", "yes")
     if not is_configured() or demo_mode:
         log.info("gcal_demo_fallback", procedure_type=procedure_type, period=period)
-        return _mock_slots(start_date, end_date, slot_duration, day_start_h, day_end_h, tz)
+        return _mock_slots(start_date, end_date, slot_duration, day_start_h, day_end_h, cfg)
 
     try:
         calendar_id = cfg.calendar_id
@@ -159,7 +160,7 @@ def list_available_slots(
         buf       = timedelta(minutes=buffer)
 
         while current <= end_date and len(available) < 3:
-            if current.weekday() > 5:  # Pula domingo
+            if current.weekday() not in cfg.workdays:
                 current += timedelta(days=1)
                 continue
 

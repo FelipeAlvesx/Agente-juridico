@@ -49,7 +49,7 @@ def _confirm_appointment(appointment_id: int) -> None:
         send_message(
             apt["phone"],
             f"Boa notícia! Seu agendamento foi confirmado 🎉\n\n"
-            f"💆 {apt['procedure_type']}\n"
+            f"⚖️ {apt['procedure_type']}\n"
             f"🕐 {sl}\n\n"
             f"Qualquer dúvida ou se precisar remarcar, é só me chamar!",
         )
@@ -77,7 +77,7 @@ def _confirm_appointment(appointment_id: int) -> None:
         send_message(
             apt["phone"],
             f"Seu agendamento foi remarcado com sucesso!\n\n"
-            f"💆 {apt['procedure_type']}\n"
+            f"⚖️ {apt['procedure_type']}\n"
             f"🕐 {slot_label(new_start, tz)}\n\n"
             f"Qualquer dúvida, é só me chamar!",
         )

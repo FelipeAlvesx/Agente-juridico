@@ -15,6 +15,9 @@ required:
 optional:
   - business.address
   - business.phone
+  - business.hours_start                     # hora de abertura, int. default: 9
+  - business.hours_end                       # hora de fechamento, int. default: 19
+  - business.workdays                        # [seg,ter,...]. default: seg-sáb
   - business.segment                       # ex: "Clínica de estética avançada"
   - integrations.google_calendar.calendar_id
   - integrations.google_calendar.slot_duration_minutes   # default: 60

@@ -31,7 +31,8 @@ services:
     container_name: juris_agent
     restart: always
     ports:
-      - "3000:3000"
+      # 3000 no host é de outro projeto — o agente sai na 3100.
+      - "3100:3000"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-}
@@ -61,12 +62,15 @@ services:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
+      args:
+        # Tem que ser build arg: o Vite congela isso no bundle e quem serve
+        # depois é o nginx, que não lê env. Resolve no browser, então acompanha
+        # a porta publicada do agente (3100), não a interna.
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:3100}
     container_name: juris_dashboard
     restart: always
     ports:
       - "5173:80"
-    environment:
-      - VITE_API_URL=http://localhost:3000
     depends_on:
       - agent
     networks:

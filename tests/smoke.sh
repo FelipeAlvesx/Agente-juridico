@@ -3,7 +3,7 @@
 
 set -e
 
-AGENT_URL=${AGENT_URL:-http://localhost:3000}
+AGENT_URL=${AGENT_URL:-http://localhost:3100}
 DASHBOARD_URL=${DASHBOARD_URL:-http://localhost:5173}
 
 fail=0

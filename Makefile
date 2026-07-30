@@ -83,7 +83,7 @@ shell:
 dev-dashboard:
 	@echo "==> Iniciando dashboard em modo desenvolvimento (Vite HMR)..."
 	@echo "    Acesse: http://localhost:5173"
-	@echo "    O agente deve estar rodando em http://localhost:3000"
+	@echo "    O agente deve estar rodando em http://localhost:3100"
 	@cd dashboard && npm install && npm run dev
 
 # ─── Testes ──────────────────────────────────────────────────────────────────

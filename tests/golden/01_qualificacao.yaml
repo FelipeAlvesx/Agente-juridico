@@ -1,0 +1,34 @@
+name: Qualificação completa — trabalhista, nome já na primeira mensagem
+
+messages:
+  - role: user
+    text: "oi, sou o Rafael. fui demitido sem justa causa e tô sem receber nada até agora"
+  - role: agent
+    # Nome e área vieram na mensagem: tem que salvar e NÃO re-perguntar o nome.
+    expect_tool_calls: [save_lead_field]
+    expect_text_absent:
+      - "como é o seu nome"
+      - "qual é o seu nome"
+      - "qual seu nome"
+      - "você tem direito"
+      - "com certeza você"
+      - "R$"
+      - "%"
+      - "boas chances"
+
+  - role: user
+    text: "trabalhei 3 anos lá, me mandaram embora dia 10 e não pagaram as verbas. não tenho audiência nem nada marcado"
+  - role: agent
+    # resumo_caso + urgencia (inferida: sem prazo formal = media). Sem opinar sobre mérito.
+    expect_tool_calls: [save_lead_field]
+    expect_text_absent:
+      - "caso forte"
+      - "caso simples"
+      - "artigo"
+      - "CLT"
+      - "seu direito é"
+
+  - role: user
+    text: "achei vocês no google"
+  - role: agent
+    expect_tool_calls: [save_lead_field, mark_lead_complete]

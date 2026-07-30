@@ -91,12 +91,12 @@ export function Metrics() {
     }))
   }, [stats])
 
-  /* Procedimentos */
+  /* Áreas jurídicas */
   const procedureData = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const l of leads ?? []) {
-      if (l.procedimento_interesse)
-        counts[l.procedimento_interesse] = (counts[l.procedimento_interesse] ?? 0) + 1
+      if (l.area_juridica)
+        counts[l.area_juridica] = (counts[l.area_juridica] ?? 0) + 1
     }
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
@@ -127,7 +127,7 @@ export function Metrics() {
   const sourceData = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const l of leads ?? []) {
-      if (l.indicacao) counts[l.indicacao] = (counts[l.indicacao] ?? 0) + 1
+      if (l.origem) counts[l.origem] = (counts[l.origem] ?? 0) + 1
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }))
   }, [leads])
@@ -168,7 +168,7 @@ export function Metrics() {
         ))}
       </div>
 
-      {/* Funil + procedimentos */}
+      {/* Funil + áreas */}
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card">
           <h2 className="text-sm font-semibold text-gray-700 mb-1">Funil de conversão</h2>
@@ -201,7 +201,7 @@ export function Metrics() {
         </div>
 
         <div className="card">
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Procedimentos mais solicitados</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">Áreas jurídicas mais procuradas</h2>
           <p className="text-xs text-gray-400 mb-4">Por interesse declarado no WhatsApp</p>
           {procedureData.length === 0 ? (
             <div className="h-52 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
@@ -241,7 +241,7 @@ export function Metrics() {
 
         <div className="card">
           <h2 className="text-sm font-semibold text-gray-700 mb-1">Canais de origem</h2>
-          <p className="text-xs text-gray-400 mb-4">Como as clientes chegaram à Lumina</p>
+          <p className="text-xs text-gray-400 mb-4">Como os leads chegaram ao escritório</p>
           {sourceData.length === 0 ? (
             <div className="h-44 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
           ) : (

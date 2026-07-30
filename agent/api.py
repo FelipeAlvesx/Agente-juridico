@@ -10,6 +10,7 @@ import yaml as _yaml
 
 from sessions import (
     get_stats, get_all_leads, get_all_appointments,
+    set_lead_status, clear_lead_status, reset_lead, LEAD_STATUSES,
     get_history, get_conversation_for_dashboard, get_recent_conversations,
     get_appointment, update_appointment, create_appointment,
     get_all_services, create_service, update_service, delete_service,
@@ -54,7 +55,7 @@ def _map_apt(apt: dict) -> dict:
 
 def _cors(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
@@ -77,8 +78,44 @@ def leads():
         return _cors(jsonify({}))
     limit  = int(request.args.get("limit", 50))
     offset = int(request.args.get("offset", 0))
-    data   = get_all_leads(limit=limit, offset=offset)
+    status = request.args.get("status") or None
+    if status and status not in LEAD_STATUSES:
+        return jsonify({"error": f"status inválido: {status}"}), 400
+    data   = get_all_leads(limit=limit, offset=offset, status=status)
     return jsonify({"leads": data, "count": len(data)})
+
+
+# Motivos de perda — enum fechado para o funil render e o follow-up filtrar.
+MOTIVOS_PERDA = (
+    "sem_resposta", "fora_area_atuacao", "sem_interesse",
+    "buscou_outro_escritorio", "so_queria_informacao", "outro",
+)
+
+
+@api_bp.route("/leads/<path:phone>/status", methods=["PUT", "OPTIONS"])
+def lead_status(phone: str):
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}))
+    if not phone.endswith("@s.whatsapp.net"):
+        phone = phone + "@s.whatsapp.net"
+
+    body   = request.get_json(force=True) or {}
+    status = (body.get("status") or "").strip()
+    motivo = (body.get("motivo_perda") or "").strip()
+
+    if status == "auto":
+        clear_lead_status(phone)
+        return jsonify({"ok": True, "status": "auto"})
+    if status not in LEAD_STATUSES:
+        return jsonify({"error": f"status deve ser um de: {', '.join(LEAD_STATUSES)} ou 'auto'"}), 400
+    if status == "perdido":
+        if motivo not in MOTIVOS_PERDA:
+            return jsonify({"error": f"motivo_perda deve ser um de: {', '.join(MOTIVOS_PERDA)}"}), 400
+    else:
+        motivo = ""
+
+    set_lead_status(phone, status, motivo)
+    return jsonify({"ok": True, "status": status, "motivo_perda": motivo})
 
 
 @api_bp.route("/appointments", methods=["GET", "POST", "OPTIONS"])
@@ -164,10 +201,10 @@ def confirm_appointment(appointment_id: int):
         sl = slot_label(apt["slot_start"], tz)
         send_message(
             apt["phone"],
-            f"Boa notícia! Seu agendamento foi confirmado 🎉\n\n"
-            f"💆 {apt['procedure_type']}\n"
+            f"Sua consulta com o advogado está confirmada.\n\n"
+            f"⚖️ {apt['procedure_type']}\n"
             f"🕐 {sl}\n\n"
-            f"Qualquer dúvida, é só me chamar!",
+            f"Se precisar remarcar ou tiver alguma dúvida, me chame por aqui."
         )
         return jsonify({"ok": True, "status": "confirmed"})
 
@@ -190,10 +227,10 @@ def confirm_appointment(appointment_id: int):
         )
         send_message(
             apt["phone"],
-            f"Seu agendamento foi remarcado com sucesso!\n\n"
-            f"💆 {apt['procedure_type']}\n"
+            f"Sua consulta foi remarcada.\n\n"
+            f"⚖️ {apt['procedure_type']}\n"
             f"🕐 {slot_label(new_start, tz)}\n\n"
-            f"Qualquer dúvida, é só me chamar!",
+            f"Se precisar de outro horário, me chame por aqui.",
         )
         return jsonify({"ok": True, "status": "confirmed"})
 
@@ -202,8 +239,8 @@ def confirm_appointment(appointment_id: int):
         update_appointment(appointment_id, status="cancelled")
         send_message(
             apt["phone"],
-            f"Seu agendamento foi cancelado conforme solicitado.\n"
-            f"Se quiser agendar em outro momento, é só me chamar 😊",
+            f"Sua consulta foi cancelada conforme solicitado.\n"
+            f"Se quiser agendar em outro momento, me chame por aqui.",
         )
         return jsonify({"ok": True, "status": "cancelled"})
 
@@ -226,17 +263,17 @@ def reject_appointment(appointment_id: int):
         if status == "reschedule_requested":
             update_appointment(appointment_id, status="confirmed", new_slot_start=None, new_slot_end=None)
             patient_msg = (
-                f"Infelizmente não conseguimos remarcar para esse horário 😕\n"
+                f"Não conseguimos remarcar para esse horário.\n"
                 + (f"Motivo: {reason}\n\n" if reason else "\n")
-                + "Quer tentar outro horário? É só me dizer!"
+                + "Quer tentar outro horário? Me diga qual fica melhor."
             )
         else:
             delete_event(apt.get("external_id") or "")
             update_appointment(appointment_id, status="rejected")
             patient_msg = (
-                f"Infelizmente não conseguimos confirmar esse horário 😕\n"
+                f"Não conseguimos confirmar esse horário.\n"
                 + (f"Motivo: {reason}\n\n" if reason else "\n")
-                + "Quer tentar outro dia ou horário? É só me dizer!"
+                + "Quer tentar outro dia ou horário? Me diga o que fica melhor."
             )
         send_message(apt["phone"], patient_msg)
         return jsonify({"ok": True, "status": "rejected"})
@@ -451,3 +488,21 @@ def test_message():
     from agent_core import run_test_message
     result = run_test_message(phone, text, history)
     return jsonify(result)
+
+
+@api_bp.route("/test/reset", methods=["POST", "OPTIONS"])
+def test_reset():
+    """Zera o lead para o golden test não rodar a 2ª rodada em cima da 1ª."""
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}))
+
+    if os.getenv("FLASK_ENV") == "production":
+        return jsonify({"error": "Endpoint disponível apenas em modo de teste"}), 403
+
+    phone = (request.get_json(force=True) or {}).get("phone", "").strip()
+    if not phone:
+        return jsonify({"error": "phone obrigatório"}), 400
+    if not phone.endswith("@s.whatsapp.net"):
+        phone = phone + "@s.whatsapp.net"
+
+    return jsonify({"ok": True, "phone": phone, "deleted": reset_lead(phone)})

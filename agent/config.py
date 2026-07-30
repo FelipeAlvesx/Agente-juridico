@@ -24,6 +24,9 @@ class BusinessConfig:
     phone: str
     timezone: str
     hours: str
+    hours_start: int
+    hours_end: int
+    workdays: tuple
     agent_name: str
     agent_role: str
     evolution_instance: str
@@ -42,6 +45,22 @@ class BusinessConfig:
 
     def __post_init__(self):
         self.tz = ZoneInfo(self.timezone)
+
+
+# Dias úteis no YAML vêm por nome (o tenant é editado por quem não é dev).
+_WEEKDAY_NUM = {
+    "seg": 0, "ter": 1, "qua": 2, "qui": 3, "sex": 4, "sab": 5, "sáb": 5, "dom": 6,
+}
+
+
+def _parse_workdays(raw) -> tuple:
+    """['seg','ter',...] → (0, 1, ...). Default: seg-sáb (comportamento da engine)."""
+    if not raw:
+        return (0, 1, 2, 3, 4, 5)
+    days = sorted({_WEEKDAY_NUM[str(d).strip().lower()[:3]] for d in raw})
+    if not days:
+        raise RuntimeError("business.workdays vazio após parse")
+    return tuple(days)
 
 
 def _load_config() -> BusinessConfig:
@@ -95,6 +114,9 @@ def _load_config() -> BusinessConfig:
         phone=str(biz.get("phone", "") or ""),
         timezone=biz["timezone"],
         hours=biz["hours"],
+        hours_start=int(biz.get("hours_start", 9)),
+        hours_end=int(biz.get("hours_end", 19)),
+        workdays=_parse_workdays(biz.get("workdays")),
         agent_name=agent["name"],
         agent_role=agent.get("role", "consultora de agendamentos"),
         evolution_instance=integ["evolution"]["instance"],

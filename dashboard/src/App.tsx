@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar'
 import { Overview } from './pages/Overview'
 import { Appointments } from './pages/Appointments'
 import { Contacts } from './pages/Contacts'
+import { Pipeline } from './pages/Pipeline'
 import { Conversations } from './pages/Conversations'
 import { Metrics } from './pages/Metrics'
 import { Servicos } from './pages/Servicos'
@@ -17,6 +18,7 @@ export default function App() {
         <Routes>
           <Route path="/"               element={<Overview />} />
           <Route path="/pacientes"      element={<Contacts />} />
+          <Route path="/pipeline"       element={<Pipeline />} />
           <Route path="/servicos"       element={<Servicos />} />
           <Route path="/agendamentos"   element={<Appointments />} />
           <Route path="/profissionais"  element={<Profissionais />} />

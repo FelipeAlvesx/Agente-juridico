@@ -33,7 +33,7 @@ export function Contacts() {
     return data.filter(l =>
       (l.nome ?? '').toLowerCase().includes(q) ||
       l.phone.includes(q) ||
-      (l.procedimento_interesse ?? '').toLowerCase().includes(q)
+      (l.area_juridica ?? '').toLowerCase().includes(q)
     )
   }, [data, query])
 
@@ -42,9 +42,9 @@ export function Contacts() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Pacientes</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {data ? `${data.length} cliente${data.length !== 1 ? 's' : ''} cadastrado${data.length !== 1 ? 's' : ''}` : 'Carregando...'}
+            {data ? `${data.length} contato${data.length !== 1 ? 's' : ''} no CRM` : 'Carregando...'}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -54,7 +54,7 @@ export function Contacts() {
             </span>
             <input
               type="text"
-              placeholder="Buscar paciente..."
+              placeholder="Buscar contato..."
               value={query}
               onChange={e => setQuery(e.target.value)}
               className="input pl-9 w-60"
@@ -62,7 +62,7 @@ export function Contacts() {
           </div>
           <button className="btn-primary flex items-center gap-1.5 whitespace-nowrap">
             <IconPlus className="w-4 h-4" />
-            Novo Paciente
+            Novo Contato
           </button>
         </div>
       </div>
@@ -73,11 +73,11 @@ export function Contacts() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-5 py-3.5">Paciente</th>
+                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-5 py-3.5">Contato</th>
                 <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Telefone</th>
-                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Procedimento</th>
-                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Indicação</th>
-                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Primeiro contato</th>
+                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Área jurídica</th>
+                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Origem</th>
+                <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Último contato</th>
                 <th className="text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-4 py-3.5">Status</th>
               </tr>
             </thead>
@@ -85,7 +85,7 @@ export function Contacts() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-16 text-sm text-gray-400">
-                    {query ? 'Nenhum paciente encontrado.' : 'Nenhum paciente cadastrado ainda.'}
+                    {query ? 'Nenhum contato encontrado.' : 'Nenhum contato registrado ainda.'}
                   </td>
                 </tr>
               )}
@@ -111,24 +111,24 @@ export function Contacts() {
                   </td>
                   <td className="px-4 py-3.5 text-sm text-gray-500">{lead.phone}</td>
                   <td className="px-4 py-3.5">
-                    {lead.procedimento_interesse ? (
-                      <span className="text-sm text-gray-700">{lead.procedimento_interesse}</span>
+                    {lead.area_juridica ? (
+                      <span className="text-sm text-gray-700">{lead.area_juridica}</span>
                     ) : (
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3.5">
-                    {lead.indicacao ? (
-                      <span className="text-sm text-gray-500">{lead.indicacao}</span>
+                    {lead.origem ? (
+                      <span className="text-sm text-gray-500">{lead.origem}</span>
                     ) : (
                       <span className="text-gray-300">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3.5 text-sm text-gray-500">
-                    {lead.created_at ? format(parseISO(lead.created_at), "d MMM yyyy", { locale: ptBR }) : '—'}
+                    {lead.last_contact ? format(parseISO(lead.last_contact), "d MMM yyyy", { locale: ptBR }) : '—'}
                   </td>
                   <td className="px-4 py-3.5">
-                    <StatusBadge status={lead.qualified ? 'returning' : 'new'} />
+                    <StatusBadge status={lead.status} />
                   </td>
                 </tr>
               ))}

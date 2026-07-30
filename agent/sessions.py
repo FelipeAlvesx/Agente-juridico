@@ -36,25 +36,25 @@ def clear_offered_slots(phone: str) -> None:
     with _OFFERED_LOCK:
         _OFFERED_SLOTS.pop(phone, None)
 
+# "services" na engine = o que o escritório atende. Preço sempre 0: honorários não
+# entram no CRM nem no contexto do agente (Provimento 205/2021 CFOAB).
 _INITIAL_SERVICES = [
-    ("Faciais & Limpeza", "Limpeza de pele profunda",       60,  180.0),
-    ("Faciais & Limpeza", "Peeling químico",                45,  220.0),
-    ("Faciais & Limpeza", "Drenagem linfática facial",      60,  150.0),
-    ("Faciais & Limpeza", "Hidratação profunda com LED",    60,  200.0),
-    ("Rejuvenescimento",  "Botox",                          45,  800.0),
-    ("Rejuvenescimento",  "Preenchimento labial",           60,  950.0),
-    ("Rejuvenescimento",  "Fio de sustentação (PDO)",       90, 2500.0),
-    ("Rejuvenescimento",  "Skinbooster",                    45,  650.0),
-    ("Rejuvenescimento",  "Bioestimulador de colágeno",     60, 1200.0),
-    ("Laser & Luz",       "Laser CO2 fracionado",           60, 1500.0),
-    ("Laser & Luz",       "Microagulhamento com vitaminas", 60,  350.0),
-    ("Laser & Luz",       "Luz intensa pulsada (LIP)",      45,  450.0),
+    ("Consultas",        "Consulta inicial",                60, 0.0),
+    ("Consultas",        "Consulta online",                 45, 0.0),
+    ("Áreas de atuação", "Direito Trabalhista",             60, 0.0),
+    ("Áreas de atuação", "Direito de Família e Sucessões",  60, 0.0),
+    ("Áreas de atuação", "Direito do Consumidor",           60, 0.0),
+    ("Áreas de atuação", "Direito Previdenciário",          60, 0.0),
+    ("Áreas de atuação", "Direito Civil e Contratos",       60, 0.0),
+    ("Áreas de atuação", "Direito Empresarial",             60, 0.0),
+    ("Áreas de atuação", "Direito Imobiliário",             60, 0.0),
+    ("Áreas de atuação", "Direito Criminal",                60, 0.0),
 ]
 
 _INITIAL_PROFESSIONALS = [
-    ("Dra. Sofia Mendes",  "Dermatologista",           "SM", "#7C3D6E", 4.9, 34, 5),
-    ("Dra. Carla Ribeiro", "Esteticista Especialista", "CR", "#2D6E7C", 4.8, 28, 8),
-    ("Dr. Lucas Mendonça", "Bioestimuladores",         "LM", "#2D7C3D", 4.7, 21, 4),
+    ("Dra. Cláudia Vasconcelos", "Trabalhista e Previdenciário", "CV", "#7C3D6E", 5.0, 0, 2),
+    ("Dr. Rafael Antunes",      "Família e Sucessões",          "RA", "#2D6E7C", 5.0, 0, 1),
+    ("Dra. Marina Queiroz",     "Consumidor e Cível",           "MQ", "#2D7C3D", 5.0, 0, 2),
 ]
 
 _seeded = False
@@ -80,6 +80,14 @@ def _get_conn() -> sqlite3.Connection:
             field TEXT NOT NULL,
             value TEXT NOT NULL,
             PRIMARY KEY (phone, field)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_status (
+            phone        TEXT PRIMARY KEY,
+            status       TEXT NOT NULL,
+            motivo_perda TEXT NOT NULL DEFAULT '',
+            updated_at   REAL NOT NULL
         )
     """)
     conn.execute("""
@@ -274,35 +282,152 @@ def is_lead_qualified(phone: str, lead_fields: tuple) -> bool:
     return all(f in data for f in lead_fields)
 
 
-def get_all_leads(limit: int = 100, offset: int = 0) -> list[dict]:
-    """Retorna todos os leads com seus dados de qualificação agregados."""
+# ── Funil ─────────────────────────────────────────────────────────────────────
+
+LEAD_STATUSES = ("novo", "qualificado", "consulta_agendada", "cliente", "perdido")
+
+# Status que a conversa produz sozinha. "cliente" e "perdido" são decisão humana
+# (ou do follow-up) e por isso só existem gravados em lead_status.
+_ACTIVE_APT = ("pending", "confirmed", "reschedule_requested", "cancel_requested")
+
+# O agente encerra alguns atendimentos gravando status/motivo_perda direto em
+# lead_data (KV, sem migration). Traduzimos para o funil — sem tabela paralela.
+_AGENT_STATUS = {
+    "fora_de_escopo": ("perdido", "fora_area_atuacao"),
+}
+
+# Precedência do status: lead_status (decisão humana no CRM) > lead_data (agente) > derivado.
+
+
+def set_lead_status(phone: str, status: str, motivo_perda: str = "") -> None:
+    """Grava status explícito do lead. Sobrepõe o status derivado da conversa."""
+    if status not in LEAD_STATUSES:
+        raise ValueError(f"status inválido: {status}")
+    if status != "perdido":
+        motivo_perda = ""
     conn = _get_conn()
-    phones = conn.execute(
-        """SELECT DISTINCT phone FROM lead_data
-           ORDER BY rowid DESC LIMIT ? OFFSET ?""",
-        (limit, offset),
-    ).fetchall()
+    conn.execute(
+        """INSERT INTO lead_status (phone, status, motivo_perda, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(phone) DO UPDATE SET
+             status = excluded.status,
+             motivo_perda = excluded.motivo_perda,
+             updated_at = excluded.updated_at""",
+        (phone, status, motivo_perda, time.time()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def clear_lead_status(phone: str) -> None:
+    """Remove o status explícito — o lead volta a seguir o derivado da conversa."""
+    conn = _get_conn()
+    conn.execute("DELETE FROM lead_status WHERE phone = ?", (phone,))
+    conn.commit()
+    conn.close()
+
+
+def get_lead_status(phone: str) -> dict:
+    """{status, motivo_perda, motivo_perda_detalhe, last_contact} — derivado se não houver explícito."""
+    keys = ("status", "motivo_perda", "motivo_perda_detalhe", "last_contact")
+    for lead in get_all_leads(limit=1_000_000):
+        if lead["phone"] == phone:
+            return {k: lead[k] for k in keys}
+    return dict.fromkeys(keys, "") | {"status": "novo", "last_contact": None}
+
+
+def _lead_fields() -> tuple:
+    from config import get_config  # import tardio: config não pode ser importado no topo
+    return get_config().lead_fields
+
+
+def get_all_leads(limit: int = 100, offset: int = 0, status: str | None = None) -> list[dict]:
+    """Todo mundo que falou com o agente vira lead — inclusive quem não qualificou.
+
+    Status é o gravado em lead_status; sem registro, é derivado da conversa
+    (consulta agendada > qualificado > novo).
+    """
+    fields = _lead_fields()
+    conn = _get_conn()
+
+    data_by_phone: dict[str, dict] = {}
+    for ph, field, value in conn.execute("SELECT phone, field, value FROM lead_data"):
+        data_by_phone.setdefault(ph, {})[field] = value
+
+    contact: dict[str, tuple] = {
+        ph: (first, last)
+        for ph, first, last in conn.execute(
+            "SELECT phone, MIN(ts), MAX(ts) FROM sessions GROUP BY phone"
+        )
+    }
+
+    booked = {
+        ph for (ph,) in conn.execute(
+            f"SELECT DISTINCT phone FROM appointments WHERE status IN ({','.join('?' * len(_ACTIVE_APT))})",
+            _ACTIVE_APT,
+        )
+    }
+
+    explicit = {
+        ph: (st, motivo)
+        for ph, st, motivo in conn.execute("SELECT phone, status, motivo_perda FROM lead_status")
+    }
+    conn.close()
 
     leads = []
-    for (phone,) in phones:
-        rows = conn.execute(
-            "SELECT field, value FROM lead_data WHERE phone = ?", (phone,)
-        ).fetchall()
-        data = {r[0]: r[1] for r in rows}
-        # Last contact timestamp from sessions
-        last_ts = conn.execute(
-            "SELECT MAX(ts) FROM sessions WHERE phone = ?", (phone,)
-        ).fetchone()[0]
+    for phone in set(data_by_phone) | set(contact) | set(explicit):
+        data = data_by_phone.get(phone, {})
+        first_ts, last_ts = contact.get(phone, (None, None))
+        qualified = bool(fields) and all(f in data for f in fields)
+
+        if phone in explicit:
+            st, motivo = explicit[phone]
+        elif data.get("status") in _AGENT_STATUS:
+            st, motivo = _AGENT_STATUS[data["status"]]
+        else:
+            st = "consulta_agendada" if phone in booked else ("qualificado" if qualified else "novo")
+            motivo = ""
+
         leads.append({
-            "phone": phone,
-            "nome": data.get("nome", ""),
-            "procedimento_interesse": data.get("procedimento_interesse", ""),
-            "indicacao": data.get("indicacao", ""),
-            "qualified": all(f in data for f in ("nome", "procedimento_interesse", "indicacao")),
-            "created_at": _ts_to_iso(last_ts) if last_ts else None,
+            **data,
+            "phone":        phone,
+            "nome":         data.get("nome", ""),
+            "qualified":    qualified,
+            "status":       st,
+            "motivo_perda": motivo,
+            # texto livre que o agente gravou ao encerrar; complementa o motivo do enum
+            "motivo_perda_detalhe": data.get("motivo_perda", ""),
+            "created_at":   _ts_to_iso(first_ts) if first_ts else None,
+            "last_contact": _ts_to_iso(last_ts) if last_ts else None,
         })
+
+    # ponytail: ordena/filtra/pagina em memória — um escritório cabe folgado nisso.
+    # Vira SQL quando passar de alguns milhares de leads.
+    leads.sort(key=lambda l: l["last_contact"] or "", reverse=True)
+    if status:
+        leads = [l for l in leads if l["status"] == status]
+    return leads[offset:offset + limit]
+
+
+def reset_lead(phone: str) -> dict:
+    """Apaga todo rastro de um telefone. Existe para o golden test não rodar
+    a 2ª rodada em cima do lead da 1ª — não use em produção."""
+    conn = _get_conn()
+    deleted = {}
+    for table in ("sessions", "lead_data", "lead_status", "appointments"):
+        deleted[table] = conn.execute(f"DELETE FROM {table} WHERE phone = ?", (phone,)).rowcount
+    deleted["escalations"] = conn.execute("DELETE FROM escalations WHERE phone = ?", (phone,)).rowcount
+    conn.commit()
     conn.close()
-    return leads
+    clear_offered_slots(phone)
+    return deleted
+
+
+def get_funnel_counts() -> dict:
+    counts = dict.fromkeys(LEAD_STATUSES, 0)
+    for lead in get_all_leads(limit=1_000_000):
+        counts[lead["status"]] = counts.get(lead["status"], 0) + 1
+    return counts
 
 
 # ── Appointments ──────────────────────────────────────────────────────────────
@@ -328,6 +453,8 @@ def create_appointment(
            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
         (phone, patient_name, procedure_type, slot_start, slot_end, notes, now, now),
     )
+    # Lead dado como perdido que volta e agenda não pode continuar perdido no funil.
+    conn.execute("DELETE FROM lead_status WHERE phone = ? AND status = 'perdido'", (phone,))
     conn.commit()
     apt_id = cursor.lastrowid
     conn.close()
@@ -554,16 +681,24 @@ def delete_professional(professional_id: int) -> bool:
 def get_stats() -> dict:
     conn = _get_conn()
 
+    # Todo mundo que chegou conta, tenha qualificado ou não.
     total_leads = conn.execute(
-        "SELECT COUNT(DISTINCT phone) FROM lead_data"
-    ).fetchone()[0]
-
-    total_qualified = conn.execute(
         """SELECT COUNT(*) FROM (
              SELECT phone FROM lead_data
-             GROUP BY phone
-             HAVING COUNT(DISTINCT field) >= 3
+             UNION SELECT phone FROM sessions
+             UNION SELECT phone FROM lead_status
            )"""
+    ).fetchone()[0]
+
+    fields = _lead_fields()
+    total_qualified = conn.execute(
+        f"""SELECT COUNT(*) FROM (
+             SELECT phone FROM lead_data
+             WHERE field IN ({','.join('?' * len(fields))})
+             GROUP BY phone
+             HAVING COUNT(DISTINCT field) >= ?
+           )""",
+        (*fields, len(fields)),
     ).fetchone()[0]
 
     total_appointments = conn.execute(
@@ -584,6 +719,7 @@ def get_stats() -> dict:
 
     conn.close()
     return {
+        "funnel": get_funnel_counts(),
         "leads_total": total_leads,
         "leads_qualified": total_qualified,
         "appointments_total": total_appointments,

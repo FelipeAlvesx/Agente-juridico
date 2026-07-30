@@ -7,7 +7,8 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_API_URL=http://localhost:3000
+# 3000 no host é de outro projeto — o agente publica na 3100.
+ARG VITE_API_URL=http://localhost:3100
 ENV VITE_API_URL=$VITE_API_URL
 
 RUN npm run build

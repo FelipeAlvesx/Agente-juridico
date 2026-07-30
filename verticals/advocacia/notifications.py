@@ -1,5 +1,5 @@
 """
-Notificações específicas do vertical estética para a recepcionista.
+Notificações do vertical advocacia para a equipe do escritório.
 """
 
 import structlog
@@ -8,19 +8,28 @@ from config import get_config
 
 log = structlog.get_logger()
 
+_LABELS = {
+    "nome":          "👤 Nome",
+    "area_juridica": "⚖️ Área",
+    "resumo_caso":   "📝 Caso",
+    "urgencia":      "⏱️ Urgência",
+    "origem":        "🔗 Como conheceu",
+}
 
-def notify_lead_qualified(phone: str, nome: str, procedimento: str, indicacao: str) -> None:
+
+def notify_lead_qualified(phone: str, data: dict, lead_fields: tuple) -> None:
     human_phone = get_config().human_phone
     if not human_phone:
         return
 
+    lines = [
+        f"{_LABELS.get(f, f)}: {data.get(f, '?')}"
+        for f in lead_fields
+    ]
     text = (
         f"🎯 *Novo lead qualificado!*\n\n"
-        f"📱 Número: {phone}\n"
-        f"👤 Nome: {nome}\n"
-        f"💆 Procedimento: {procedimento}\n"
-        f"🔗 Como conheceu: {indicacao}\n\n"
-        f"Entre em contato para confirmar o agendamento."
+        f"📱 Número: {phone}\n" + "\n".join(lines) +
+        f"\n\nEntre em contato para confirmar a consulta."
     )
     send_message(human_phone, text)
 
@@ -42,7 +51,7 @@ def notify_appointment_pending(
         f"📅 *Novo agendamento pendente* (ID #{appointment_id})\n\n"
         f"👤 Cliente: {patient_name}\n"
         f"📱 Número: {patient_phone}\n"
-        f"💆 Procedimento: {procedure_type}\n"
+        f"⚖️ Consulta: {procedure_type}\n"
         f"🕐 Horário: {slot_label}{extra}\n\n"
         f"Responda:\n"
         f"  *confirmar {appointment_id}*\n"
@@ -67,7 +76,7 @@ def notify_reschedule_pending(
         f"🔄 *Pedido de remarcação* (ID #{appointment_id})\n\n"
         f"👤 Cliente: {patient_name}\n"
         f"📱 Número: {patient_phone}\n"
-        f"💆 Procedimento: {procedure_type}\n"
+        f"⚖️ Consulta: {procedure_type}\n"
         f"🕐 Horário atual: {old_slot_label}\n"
         f"🕐 Novo horário: {new_slot_label}\n\n"
         f"Responda:\n"
@@ -94,7 +103,7 @@ def notify_cancel_pending(
         f"❌ *Pedido de cancelamento* (ID #{appointment_id})\n\n"
         f"👤 Cliente: {patient_name}\n"
         f"📱 Número: {patient_phone}\n"
-        f"💆 Procedimento: {procedure_type}\n"
+        f"⚖️ Consulta: {procedure_type}\n"
         f"🕐 Horário: {slot_label}{extra}\n\n"
         f"Responda:\n"
         f"  *confirmar {appointment_id}*  ← confirmar cancelamento\n"

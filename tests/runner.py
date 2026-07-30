@@ -8,11 +8,38 @@ import os
 import sys
 import json
 import yaml
+import hashlib
 import requests
 import argparse
 from pathlib import Path
 
-AGENT_URL = os.getenv("AGENT_URL", "http://localhost:3000")
+AGENT_URL = os.getenv("AGENT_URL", "http://localhost:3100")
+
+
+def scenario_phone(stem: str) -> str:
+    """
+    Telefone fictício estável por cenário. hash() de str é randomizado por
+    processo (PYTHONHASHSEED), então usar hash() dava um número novo a cada
+    rodada — lead órfão no CRM e falha impossível de reproduzir.
+    """
+    digits = int(hashlib.md5(stem.encode()).hexdigest(), 16) % 100000
+    return f"5511999{digits:05d}"
+
+
+def reset_scenario_state(phone: str) -> None:
+    """
+    Zera lead + conversa + consultas do telefone antes do cenário: sem isso a 2ª
+    rodada roda em cima do estado da 1ª (lead já qualificado → o agente não chama
+    save_lead_field de novo e a asserção quebra).
+    """
+    try:
+        r = requests.post(f"{AGENT_URL}/api/test/reset", json={"phone": phone}, timeout=10)
+        if r.status_code == 404:
+            print(f"    WARN /api/test/reset ausente — cenário roda sobre o estado anterior ({phone})")
+        elif r.status_code != 200:
+            print(f"    WARN reset falhou: HTTP {r.status_code}")
+    except requests.RequestException as e:
+        print(f"    WARN reset falhou: {e}")
 
 
 def run_scenario(path: Path) -> tuple[bool, str]:
@@ -24,10 +51,14 @@ def run_scenario(path: Path) -> tuple[bool, str]:
 
     print(f"\n  [{path.name}] {name}")
 
-    # Usa um telefone fictício único por cenário para não poluir sessões
-    phone = f"5511999{abs(hash(path.stem)) % 100000:05d}"
+    # Telefone fictício estável por cenário, com estado zerado antes de começar.
+    phone = scenario_phone(path.stem)
+    reset_scenario_state(phone)
     history = []
     passed = True
+    # Cenário que começa por um step 'agent' não deve estourar NameError.
+    reply = ""
+    tool_calls = []
 
     for step in messages:
         role = step["role"]
@@ -57,6 +88,11 @@ def run_scenario(path: Path) -> tuple[bool, str]:
             if isinstance(expect_text, str):
                 expect_text = [expect_text]
 
+            # Prova de recusa (OAB): a reply NÃO pode conter estes fragmentos.
+            forbidden = step.get("expect_text_absent", [])
+            if isinstance(forbidden, str):
+                forbidden = [forbidden]
+
             for tool in expect_tools:
                 if tool not in tool_calls:
                     print(f"    FAIL expected tool '{tool}' not called (got: {tool_calls})")
@@ -66,6 +102,12 @@ def run_scenario(path: Path) -> tuple[bool, str]:
                 if fragment.lower() not in reply.lower():
                     print(f"    FAIL reply missing '{fragment}'")
                     print(f"         reply was: {reply[:120]}")
+                    passed = False
+
+            for fragment in forbidden:
+                if fragment.lower() in reply.lower():
+                    print(f"    FAIL reply contains forbidden '{fragment}'")
+                    print(f"         reply was: {reply[:200]}")
                     passed = False
 
     status = "PASS" if passed else "FAIL"

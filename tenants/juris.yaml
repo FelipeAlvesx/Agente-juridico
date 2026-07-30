@@ -12,6 +12,10 @@ business:
   phone: ""
   timezone: America/Sao_Paulo
   hours: "segunda a sexta, das 9h às 18h."
+  # Fonte única do horário para agenda e contexto temporal — hours acima é só o texto.
+  hours_start: 9
+  hours_end: 18
+  workdays: [seg, ter, qua, qui, sex]
 
 agent:
   name: Helena

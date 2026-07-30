@@ -19,13 +19,36 @@ export interface Stats {
   conversion_rate: number
 }
 
+export type LeadStatus = 'novo' | 'qualificado' | 'consulta_agendada' | 'cliente' | 'perdido'
+
+export type MotivoPerda =
+  | 'sem_resposta' | 'fora_area_atuacao' | 'sem_interesse'
+  | 'buscou_outro_escritorio' | 'so_queria_informacao' | 'outro'
+
+export const MOTIVO_PERDA_LABELS: Record<MotivoPerda, string> = {
+  sem_resposta:            'Parou de responder',
+  fora_area_atuacao:       'Fora da área de atuação',
+  sem_interesse:           'Sem interesse',
+  buscou_outro_escritorio: 'Foi para outro escritório',
+  so_queria_informacao:    'Só queria informação',
+  outro:                   'Outro',
+}
+
 export interface Lead {
   phone: string
   nome: string | null
-  procedimento_interesse: string | null
-  indicacao: string | null
+  status: LeadStatus
+  motivo_perda: MotivoPerda | ''
+  /** Texto livre gravado pelo agente ao encerrar (ex.: área não atendida). */
+  motivo_perda_detalhe: string
   qualified: boolean
   created_at: string | null
+  last_contact: string | null
+  // Campos de qualificação da vertical (tenants/*.yaml → lead_fields)
+  area_juridica?: string | null
+  resumo_caso?: string | null
+  urgencia?: string | null
+  origem?: string | null
 }
 
 export interface Appointment {
@@ -104,12 +127,20 @@ export const api = {
       conversion_rate: d.leads_total > 0 ? d.leads_qualified / d.leads_total : 0,
     })),
 
-  getLeads: (params?: { limit?: number; offset?: number }) => {
+  getLeads: (params?: { limit?: number; offset?: number; status?: LeadStatus }) => {
     const qs = new URLSearchParams()
     if (params?.limit != null) qs.set('limit', String(params.limit))
     if (params?.offset != null) qs.set('offset', String(params.offset))
+    if (params?.status) qs.set('status', params.status)
     return request<{ leads: Lead[]; count: number }>(`/api/leads?${qs}`).then((r) => r.leads)
   },
+
+  // status 'auto' apaga a marcação manual e devolve o lead ao status derivado.
+  setLeadStatus: (phone: string, status: LeadStatus | 'auto', motivo_perda?: MotivoPerda) =>
+    request<{ ok: boolean }>(`/api/leads/${encodeURIComponent(phone)}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, motivo_perda }),
+    }),
 
   getAppointments: (params?: { status?: string; date_from?: string; date_to?: string }) => {
     const qs = new URLSearchParams()

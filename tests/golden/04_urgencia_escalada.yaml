@@ -1,0 +1,21 @@
+name: Urgência — prisão com audiência marcada escala antes da triagem
+
+# A escalada é o último step de propósito: mark_escalated() bloqueia as mensagens
+# seguintes do mesmo número.
+
+messages:
+  - role: user
+    text: "socorro, meu filho foi preso ontem à noite e a audiência de custódia é amanhã de manhã"
+  - role: agent
+    expect_tool_calls: [escalate_to_human]
+    # "190" só aparece na mensagem de urgencia_prazo (ESCALATION_MESSAGES) —
+    # é assim que se prova a categoria, já que o runner só vê nomes de tool.
+    expect_text_contains:
+      - "190"
+    expect_text_absent:
+      - "qual é o seu nome"
+      - "como conheceu"
+      - "vou agendar"
+      - "horário"
+      - "flagrante é"
+      - "habeas"

@@ -103,8 +103,8 @@ export function Overview() {
   const procedureData = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const l of filteredLeads) {
-      if (l.procedimento_interesse)
-        counts[l.procedimento_interesse] = (counts[l.procedimento_interesse] ?? 0) + 1
+      if (l.area_juridica)
+        counts[l.area_juridica] = (counts[l.area_juridica] ?? 0) + 1
     }
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
@@ -245,7 +245,7 @@ export function Overview() {
       {/* Charts row 2 */}
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Procedimentos mais solicitados</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">Áreas jurídicas mais procuradas</h2>
           {procedureData.length === 0 ? (
             <div className="h-48 flex items-center justify-center text-sm text-gray-300">Sem dados ainda</div>
           ) : (

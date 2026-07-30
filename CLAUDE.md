@@ -30,7 +30,7 @@ make smoke          # Health checks, sem chamar Claude
 Loop de dev mais rápido, sem WhatsApp nenhum:
 
 ```bash
-curl -X POST http://localhost:3000/api/test/message \
+curl -X POST http://localhost:3100/api/test/message \
   -H "Content-Type: application/json" \
   -d '{"phone": "5511999999999", "text": "oi, fui demitido sem justa causa"}'
 ```
