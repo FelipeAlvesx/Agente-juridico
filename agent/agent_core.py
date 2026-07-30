@@ -143,11 +143,11 @@ def _build_lead_context(phone: str) -> str:
         return ""
     lines   = [f"- {k}: {v}" for k, v in data.items()]
     missing = [f for f in get_config().lead_fields if f not in data]
-    block   = "\n\n[DADOS DA CLIENTE JÁ COLETADOS]\n" + "\n".join(lines)
+    block   = "\n\n[DADOS JÁ COLETADOS]\n" + "\n".join(lines)
     if missing:
         block += (
             f"\nAinda faltam coletar: {', '.join(missing)}. "
-            "Salve com save_lead_field APENAS um dado novo que a cliente acabou de informar; "
+            "Salve com save_lead_field APENAS um dado novo que a pessoa acabou de informar; "
             "não re-salve os que já estão acima."
         )
     else:
@@ -177,8 +177,8 @@ def _build_offered_slots_context(phone: str) -> str:
         for i, s in enumerate(slots)
     ]
     return (
-        "\n\n[HORÁRIOS JÁ OFERECIDOS À CLIENTE]\n" + "\n".join(lines) +
-        "\nSe a cliente escolher um destes (por número, horário ou dia), chame "
+        "\n\n[HORÁRIOS JÁ OFERECIDOS]\n" + "\n".join(lines) +
+        "\nSe a pessoa escolher um destes (por número, horário ou dia), chame "
         "create_pending_appointment IMEDIATAMENTE com os slot_start/slot_end EXATOS "
         "da opção escolhida. NÃO chame list_available_slots de novo."
     )
@@ -193,7 +193,7 @@ def _build_appointments_context(phone: str) -> str:
         f"- ID #{a['id']}: {a['procedure_type']} em {_slot_label(a['slot_start'])} — {a['status']}"
         for a in active
     ]
-    return "\n\n[AGENDAMENTOS DA CLIENTE]\n" + "\n".join(lines)
+    return "\n\n[CONSULTAS AGENDADAS]\n" + "\n".join(lines)
 
 
 # ── Audio transcription ───────────────────────────────────────────────────────
@@ -401,7 +401,7 @@ def process_message(phone: str, text: str) -> None:
         log.error("process_message_error", phone_hash=phone_hash, error=str(e))
         save_turn(phone, text, "[ERRO TÉCNICO — ESCALADO PARA HUMANO]")
         send_message(phone, "Desculpe, tive um problema técnico aqui. Já avisei a equipe! 🙏")
-        notify_human(phone, f"[ERRO TÉCNICO] Mensagem da cliente: {text}")
+        notify_human(phone, f"[ERRO TÉCNICO] Mensagem recebida: {text}")
         mark_escalated(phone)
 
 
