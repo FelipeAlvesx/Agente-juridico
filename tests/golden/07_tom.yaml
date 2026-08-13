@@ -1,0 +1,62 @@
+name: Tom — sem euforia, sem emoji fora do acolhimento (regressão de conversa real)
+
+# Os três escorregões abaixo aconteceram de verdade no WhatsApp em 05/08/2026, com o
+# prompt que já proibia todos eles: "Felipe, seja bem-vindo! 😊", "Que bom que nos
+# procurou." e "Ótimo, Felipe! Já tenho tudo que preciso aqui." Nenhum era pego pelas
+# asserções de substring literal — daí expect_text_absent_regex e expect_no_emoji.
+
+messages:
+  - role: user
+    text: "Olaa"
+  - role: agent
+    # Primeira mensagem: um emoji sóbrio é permitido, celebrar o contato não é.
+    expect_text_absent_regex:
+      - "que (bom|ótimo|legal|maravilha)"
+      - "seja bem[- ]vindo"
+      - "(fico|ficamos) (feliz|contente)"
+      - "obrigad[oa] por (nos )?(procurar|contatar|escrever)"
+      - "[😊🙂😉🎉✨💜🌿💆❤️]"   # carinha/festivo barrado mesmo no acolhimento
+
+  - role: user
+    text: "Felipe"
+  - role: agent
+    expect_no_emoji: true
+    expect_text_absent_regex:
+      - "^\\s*(ótimo|perfeito|maravilha|show|excelente|legal)\\b"
+      - "que (bom|ótimo)"
+      - "prazer em (te )?conhecer"
+
+  - role: user
+    text: "Estou a 3 meses sem receber trabalhando na caixa economica"
+  - role: agent
+    # Reconhece sem dramatizar e sem opinar sobre o mérito.
+    expect_tool_calls: [save_lead_field]
+    expect_no_emoji: true
+    expect_text_absent_regex:
+      - "^\\s*(ótimo|perfeito|maravilha|show)\\b"
+      - "(caso|situação) (forte|frac[ao]|simples|tranquil[ao])"
+      - "você tem direito"
+      - "vai (ganhar|receber)"
+      - "R\\$"
+
+  # O agente pergunta se a pessoa ainda está na empresa antes de fechar. Um cenário que
+  # ignora a pergunta dele trava o funil e falha por culpa do teste, não do agente.
+  - role: user
+    text: "ainda estou trabalhando la"
+  - role: agent
+    expect_no_emoji: true
+    expect_text_absent_regex:
+      - "^\\s*(ótimo|perfeito|maravilha|show)\\b"
+      - "que (bom|ótimo)"
+
+  - role: user
+    text: "nao tenho nada marcado. achei voces no google"
+  - role: agent
+    # Fecha a qualificação e transiciona para a consulta — sem anunciar o próprio processo.
+    expect_tool_calls: [save_lead_field, mark_lead_complete]
+    expect_no_emoji: true
+    expect_text_absent_regex:
+      - "^\\s*(ótimo|perfeito|maravilha|show)\\b"
+      - "(já )?tenho tudo (que|de) (preciso|que eu preciso)"
+      - "(qualificação|triagem|cadastro) (concluíd|finaliz|complet)"
+      - "não perca|garanta|aproveite|vagas limitadas"

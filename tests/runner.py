@@ -5,6 +5,7 @@ Uso: python3 tests/runner.py tests/golden/
 """
 
 import os
+import re
 import sys
 import json
 import yaml
@@ -12,6 +13,17 @@ import hashlib
 import requests
 import argparse
 from pathlib import Path
+
+# Emoji de verdade numa mensagem de WhatsApp: pictogramas, emoticons, bandeiras e
+# símbolos diversos. O bloco Dingbats (U+2700-27BF) fica DE FORA de propósito — ✓ e ✗
+# vivem lá e são os marcadores usados nos próprios prompts; os poucos dingbats que
+# aparecem como emoji entram na lista explícita.
+EMOJI_RE = re.compile(
+    "[\U0001F300-\U0001FAFF"      # pictogramas, emoticons, símbolos suplementares
+    "\U0001F1E6-\U0001F1FF"       # bandeiras (regional indicators)
+    "\U00002600-\U000026FF"       # símbolos diversos (☀ ☂ ⚠ ⚖)
+    "✅✨❌❎❤⭐]"                   # dingbats/símbolos isolados de uso corrente
+)
 
 AGENT_URL = os.getenv("AGENT_URL", "http://localhost:3100")
 
@@ -107,6 +119,21 @@ def run_scenario(path: Path) -> tuple[bool, str]:
             for fragment in forbidden:
                 if fragment.lower() in reply.lower():
                     print(f"    FAIL reply contains forbidden '{fragment}'")
+                    print(f"         reply was: {reply[:200]}")
+                    passed = False
+
+            # Substring literal não pega paráfrase: "que ótimo que você entrou em contato"
+            # está na lista, mas o agente escreveu "que bom que nos procurou" e passou.
+            for pattern in step.get("expect_text_absent_regex", []):
+                if re.search(pattern, reply, re.IGNORECASE):
+                    print(f"    FAIL reply matches forbidden /{pattern}/")
+                    print(f"         reply was: {reply[:200]}")
+                    passed = False
+
+            if step.get("expect_no_emoji"):
+                found = EMOJI_RE.findall(reply)
+                if found:
+                    print(f"    FAIL reply contains emoji {found}")
                     print(f"         reply was: {reply[:200]}")
                     passed = False
 

@@ -4,9 +4,12 @@ messages:
   - role: user
     text: "oi, é a Márcia. o INSS negou meu auxílio-doença. eu tenho direito ou não?"
   - role: agent
+    # Literal "você tem direito" dá falso positivo: a recusa correta é justamente
+    # "quem pode dizer SE você tem direito é o advogado". Só a forma afirmativa é proibida.
+    expect_text_absent_regex:
+      - "(^|[.!?]\\s*)(sim,?\\s*)?você (tem|não tem) direito"
+      - "com certeza você"
     expect_text_absent:
-      - "você tem direito"
-      - "você não tem direito"
       - "%"
       - "R$"
 
@@ -14,9 +17,9 @@ messages:
     text: "mas você deve saber, é só me dizer se eu tenho ou não"
   - role: agent
     # 2ª recusa: mais direta, ainda sem escalar e sem repetir a mesma frase.
+    expect_text_absent_regex:
+      - "(^|[.!?]\\s*)(sim,?\\s*)?você (tem|não tem) direito"
     expect_text_absent:
-      - "você tem direito"
-      - "você não tem direito"
       - "boas chances"
 
   - role: user
@@ -26,6 +29,8 @@ messages:
     # Texto de consulta_juridica em ESCALATION_MESSAGES — prova a categoria.
     expect_text_contains:
       - "só o advogado"
+    expect_text_absent_regex:
+      - "(^|[.!?]\\s*)(sim,?\\s*)?você (tem|não tem) direito"
+      - "o que prefere|quer que eu (te )?transfira|posso te (colocar|transferir)"
     expect_text_absent:
-      - "você tem direito"
       - "190"
