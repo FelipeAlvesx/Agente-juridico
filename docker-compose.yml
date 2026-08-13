@@ -18,6 +18,10 @@ services:
       - DATABASE_ENABLED=false
       - LOG_LEVEL=ERROR
       - DEL_INSTANCE=false
+    ports:
+      # 8080 no host é de outro projeto — a Evolution daqui sai na 8081.
+      # Sem isso o `make webhook` cria a instância na Evolution errada.
+      - "8081:8080"
     volumes:
       - evolution_data:/evolution/instances
     networks:

@@ -60,6 +60,12 @@ def _cors(response):
     return response
 
 
+def _jid(phone: str) -> str:
+    """Número cru vira JID. JID já pronto passa intacto — inclusive `@lid`, que o
+    WhatsApp usa hoje no lugar do número e não é `@s.whatsapp.net`."""
+    return phone if "@" in phone else phone + "@s.whatsapp.net"
+
+
 @api_bp.after_request
 def after_request(response):
     return _cors(response)
@@ -96,8 +102,7 @@ MOTIVOS_PERDA = (
 def lead_status(phone: str):
     if request.method == "OPTIONS":
         return _cors(jsonify({}))
-    if not phone.endswith("@s.whatsapp.net"):
-        phone = phone + "@s.whatsapp.net"
+    phone = _jid(phone)
 
     body   = request.get_json(force=True) or {}
     status = (body.get("status") or "").strip()
@@ -176,8 +181,7 @@ def conversations_list():
 def conversations(phone: str):
     if request.method == "OPTIONS":
         return _cors(jsonify({}))
-    if not phone.endswith("@s.whatsapp.net"):
-        phone = phone + "@s.whatsapp.net"
+    phone = _jid(phone)
     messages = get_conversation_for_dashboard(phone)
     return jsonify({"phone": phone, "messages": messages})
 
@@ -482,8 +486,7 @@ def test_message():
     text    = data.get("text", "")
     history = data.get("history", [])
 
-    if not phone.endswith("@s.whatsapp.net"):
-        phone = phone + "@s.whatsapp.net"
+    phone = _jid(phone)
 
     from agent_core import run_test_message
     result = run_test_message(phone, text, history)
@@ -502,7 +505,6 @@ def test_reset():
     phone = (request.get_json(force=True) or {}).get("phone", "").strip()
     if not phone:
         return jsonify({"error": "phone obrigatório"}), 400
-    if not phone.endswith("@s.whatsapp.net"):
-        phone = phone + "@s.whatsapp.net"
+    phone = _jid(phone)
 
     return jsonify({"ok": True, "phone": phone, "deleted": reset_lead(phone)})
