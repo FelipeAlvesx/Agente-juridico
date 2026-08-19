@@ -47,9 +47,11 @@ WhatsApp → Evolution API (:8080)
       → evolution.py (envia resposta)
 ```
 
-System prompt montado em camadas (`prompt_builder.py`):
-engine rules → persona → fragmento da vertical → regras extras do tenant →
-contexto RAG → estado do lead/consulta → hora atual.
+System prompt montado em camadas (`prompt_builder.py`): identidade → persona →
+fragmento da vertical → engine rules → regras extras do tenant → hora atual.
+RAG, estado do lead e das consultas **não** são camadas do system prompt — entram
+concatenados na mensagem do usuário (`agent_core.py`), o que muda o comportamento
+de cache. Detalhes em `docs/02-engine-do-agente.md`.
 
 ## Divisão de trabalho (3 terminais em paralelo)
 
@@ -130,7 +132,7 @@ Vale para o prompt do agente, as mensagens do WhatsApp, os textos do CRM e o see
 |---|---|
 | `agent/agent_core.py` | Loop Claude + montagem de contexto (RAG, estado do lead, consultas) |
 | `agent/sessions.py` | Modelos SQLite: leads, conversas, consultas, escalações |
-| `agent/api.py` | REST para o CRM (`/api/stats`, `/api/leads`, `/api/appointments/*`) |
+| `agent/api.py` | REST para o CRM — 19 rotas, incluindo `/api/query` (SQL read-only p/ MCP). Ver `docs/04-api-contrato.md` |
 | `verticals/advocacia/tools.py` | Tools do Claude (qualificação, agenda, escalação) |
 | `tenants/juris.yaml` | Config do escritório: áreas, horários, persona, regras OAB |
 | `knowledge/*.md` | Fonte do RAG (áreas de atuação, FAQ, documentos necessários) |
@@ -165,12 +167,36 @@ num container `python:3.11-slim` com `pyyaml structlog requests`):
 - `tools.py` jurídico, horário de atendimento vindo do tenant
 - Funil de leads em `sessions.py` (`status`, `motivo_perda`, `last_contact`) + `api.py`
 - `prompts/base/*` e `prompt_fragment.md` reescritos para o jurídico
-- 6 cenários em `tests/golden/` (qualificação, agendamento, recusas OAB, urgência,
-  insistência, fora de escopo)
+- 7 cenários em `tests/golden/` (qualificação, agendamento, recusas OAB, urgência,
+  insistência, fora de escopo, tom)
+- CRM reescrito com identidade jurídica: nove telas (inclui Triagem e Follow-up,
+  que não existiam na engine original) — não está mais "herdado da estética"
+- `.env` existe com `ANTHROPIC_API_KEY` válida — `make test-golden` roda e passa
+  7/7 contra o Claude real
+
+Documentação completa do projeto, incluindo guia de replicação para outros
+nichos, em [`docs/`](docs/README.md) — comece por `docs/README.md`.
 
 Pendente:
 
-- **`.env` não existe** — sem `ANTHROPIC_API_KEY` o `make test-golden` não roda. É o
-  único teste que prova o agente ponta a ponta contra o Claude real.
-- CRM em reconstrução: o dashboard herdado é da clínica de estética. Vai ser refeito
-  com identidade jurídica e motion design.
+- **Antes do deploy: nenhuma rota `/api/*` tem auth, e o CORS é `*`.** Não é só o
+  `/api/query` (SQL read-only, alimenta o MCP em `tools/juris_mcp.py`) — até
+  `GET /api/conversations/<phone>` já devolve o histórico integral de qualquer
+  telefone sem precisar de SQL. Local em `localhost:3100` tudo bem; exposto na
+  rede vira leitura irrestrita das conversas — sigilo profissional de cliente de
+  advogado. Resolver com token no header ou bind em 127.0.0.1 antes de publicar.
+  Ver `docs/04-api-contrato.md §5`.
+- **`verticals/` não é isolável hoje.** `agent/api.py` importa direto de
+  `verticals.advocacia`; `prompts/base/` e `knowledge/` são caminhos globais;
+  `sessions.py` semeia áreas do Direito e advogados fictícios; e sobra resíduo da
+  vertical de estética original no core (`prompt_builder.py` chama a variável de
+  contexto "INFO DA CLÍNICA", `/health` responde `"agent": "lumina"`,
+  `get_patient_appointments`, coluna `patient_name`). Levantar antes de tentar
+  plugar uma segunda vertical. Lista completa com `arquivo:linha` em
+  `docs/07-replicar-para-outro-nicho.md`.
+- **Estado crítico é in-memory de processo único**: dedup, debounce, flag de
+  escalação e slots ofertados não sobrevivem a restart nem funcionam com duas
+  réplicas.
+- `make reset-db` (`Makefile:113`) remove o volume `lumina-agent_agent_db`, que
+  não existe neste projeto (o real é `agente-advocacia_agent_db`) — imprime
+  "Banco resetado" sem resetar nada.

@@ -6,9 +6,13 @@ Registre este blueprint no main.py via app.register_blueprint(api_bp).
 from flask import Blueprint, jsonify, request
 
 import os
+import re
+import sqlite3
+import time
 import yaml as _yaml
 
 from sessions import (
+    DB_PATH,
     get_stats, get_all_leads, get_all_appointments,
     set_lead_status, clear_lead_status, reset_lead, LEAD_STATUSES,
     get_history, get_conversation_for_dashboard, get_recent_conversations,
@@ -470,6 +474,63 @@ def tenant_config():
         _yaml.dump(raw, f, allow_unicode=True, default_flow_style=False)
     _config_module._config = None  # force reload on next get_config()
     return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Consulta SQL read-only — consumida pelo MCP (tools/juris_mcp.py) para o Claude
+# ler o CRM e montar relatório. A conexão abre em mode=ro: quem recusa escrita é
+# o próprio SQLite. As checagens abaixo só fazem falhar cedo e com erro legível.
+# ---------------------------------------------------------------------------
+
+MAX_QUERY_ROWS    = 1000
+QUERY_TIMEOUT_SEC = 5.0
+
+_SQL_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.S)
+
+
+def _guard_select(sql: str) -> str:
+    """Aceita uma única instrução SELECT/WITH. Rejeita na dúvida — um `;` dentro
+    de string literal derruba a query, e recusar de graça custa menos que soltar
+    instrução encadeada no banco."""
+    bare = _SQL_COMMENT.sub(" ", sql).strip().rstrip(";").strip()
+    if not bare:
+        raise ValueError("SQL vazio")
+    if ";" in bare:
+        raise ValueError("apenas uma instrução por chamada")
+    if not re.match(r"^(select|with)\b", bare, re.I):
+        raise ValueError("apenas SELECT ou WITH")
+    return bare
+
+
+@api_bp.route("/query", methods=["POST", "OPTIONS"])
+def query():
+    if request.method == "OPTIONS":
+        return _cors(jsonify({}))
+
+    body = request.get_json(silent=True) or {}
+    try:
+        sql = _guard_select(body.get("sql") or "")
+        limit = min(int(body.get("limit") or 200), MAX_QUERY_ROWS)
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    deadline = time.monotonic() + QUERY_TIMEOUT_SEC
+    conn.set_progress_handler(lambda: time.monotonic() > deadline, 10_000)
+    try:
+        cur     = conn.execute(sql)
+        rows    = cur.fetchmany(limit + 1)
+        columns = [d[0] for d in cur.description or []]
+    except sqlite3.Error as e:
+        return jsonify({"error": f"sqlite: {e}"}), 400
+    finally:
+        conn.close()
+
+    return jsonify({
+        "columns":   columns,
+        "rows":      [list(r) for r in rows[:limit]],
+        "truncated": len(rows) > limit,
+    })
 
 
 @api_bp.route("/test/message", methods=["POST", "OPTIONS"])

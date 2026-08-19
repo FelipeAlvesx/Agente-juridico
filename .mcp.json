@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "juris-crm": {
+      "command": "python3",
+      "args": ["tools/juris_mcp.py"]
+    }
+  }
+}
